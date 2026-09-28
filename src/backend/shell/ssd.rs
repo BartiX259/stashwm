@@ -87,9 +87,9 @@ impl HeaderBar {
                     WindowSurface::Wayland(w) => {
                         let seat = seat.clone();
                         let toplevel = w.clone();
-                        state
-                            .handle
-                            .insert_idle(move |data| data.move_request_xdg(&toplevel, &seat, serial));
+                        state.handle.insert_idle(move |data| {
+                            data.move_request_xdg(&toplevel, &seat, serial)
+                        });
                     }
                     #[cfg(feature = "xwayland")]
                     WindowSurface::X11(w) => {
@@ -119,9 +119,9 @@ impl HeaderBar {
                     WindowSurface::Wayland(w) => {
                         let seat = seat.clone();
                         let toplevel = w.clone();
-                        state
-                            .handle
-                            .insert_idle(move |data| data.move_request_xdg(&toplevel, &seat, serial));
+                        state.handle.insert_idle(move |data| {
+                            data.move_request_xdg(&toplevel, &seat, serial)
+                        });
                     }
                     #[cfg(feature = "xwayland")]
                     WindowSurface::X11(w) => {
@@ -190,8 +190,10 @@ impl HeaderBar {
             .unwrap_or(false)
             && (needs_redraw_buttons || !self.close_button_hover)
         {
-            self.close_button
-                .update((BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32), CLOSE_COLOR_HOVER);
+            self.close_button.update(
+                (BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32),
+                CLOSE_COLOR_HOVER,
+            );
             self.close_button_hover = true;
         } else if !self
             .pointer_loc
@@ -208,7 +210,9 @@ impl HeaderBar {
         if self
             .pointer_loc
             .as_ref()
-            .map(|l| l.x >= (width - BUTTON_WIDTH * 2) as f64 && l.x <= (width - BUTTON_WIDTH) as f64)
+            .map(|l| {
+                l.x >= (width - BUTTON_WIDTH * 2) as f64 && l.x <= (width - BUTTON_WIDTH) as f64
+            })
             .unwrap_or(false)
             && (needs_redraw_buttons || !self.maximize_button_hover)
         {
@@ -218,7 +222,9 @@ impl HeaderBar {
         } else if !self
             .pointer_loc
             .as_ref()
-            .map(|l| l.x >= (width - BUTTON_WIDTH * 2) as f64 && l.x <= (width - BUTTON_WIDTH) as f64)
+            .map(|l| {
+                l.x >= (width - BUTTON_WIDTH * 2) as f64 && l.x <= (width - BUTTON_WIDTH) as f64
+            })
             .unwrap_or(false)
             && (needs_redraw_buttons || self.maximize_button_hover)
         {
@@ -253,14 +259,22 @@ impl<R: Renderer> AsRenderElements<R> for HeaderBar {
             .into(),
             SolidColorRenderElement::from_buffer(
                 &self.maximize_button,
-                location + (header_end_offset - button_offset.upscale(2)).to_physical_precise_round(scale),
+                location
+                    + (header_end_offset - button_offset.upscale(2))
+                        .to_physical_precise_round(scale),
                 scale,
                 alpha,
                 Kind::Unspecified,
             )
             .into(),
-            SolidColorRenderElement::from_buffer(&self.background, location, scale, alpha, Kind::Unspecified)
-                .into(),
+            SolidColorRenderElement::from_buffer(
+                &self.background,
+                location,
+                scale,
+                alpha,
+                Kind::Unspecified,
+            )
+            .into(),
         ]
     }
 }
@@ -288,7 +302,7 @@ impl WindowElement {
             .borrow_mut()
     }
 
-    pub fn set_ssd(&self, ssd: bool) {
-        self.decoration_state().is_ssd = ssd;
+    pub fn set_ssd(&self, _ssd: bool) {
+        self.decoration_state().is_ssd = false;
     }
 }

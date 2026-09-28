@@ -226,16 +226,68 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         self.suppressed_keys = suppressed_keys;
         action
     }
+    pub fn handle_pointer_motion(&mut self, pos: Point<f64, Logical>, time: InputTime) {
+        let consumed = self.dispatch_wm(crate::wm::events::WmEvent::PointerMoved {
+            pos,
+            time: std::time::Instant::now(),
+        });
 
+        let serial = SCOUNTER.next_serial();
+        let pointer = self.pointer.clone();
+
+        if consumed {
+            // Need to call this to actually move the cursor
+            // but don't tell any apps
+            pointer.motion(
+                self,
+                None::<(
+                    crate::backend::focus::PointerFocusTarget,
+                    Point<f64, Logical>,
+                )>,
+                &MotionEvent {
+                    location: pos,
+                    serial,
+                    time,
+                },
+            );
+            pointer.frame(self);
+            return;
+        }
+
+        let under = self.surface_under(pos);
+        pointer.motion(
+            self,
+            under,
+            &MotionEvent {
+                location: pos,
+                serial,
+                time,
+            },
+        );
+        pointer.frame(self);
+    }
     fn on_pointer_button<B: InputBackend>(&mut self, evt: B::PointerButtonEvent) {
         let serial = SCOUNTER.next_serial();
         let button = evt.button_code();
 
         let state = wl_pointer::ButtonState::from(evt.state());
 
-        if wl_pointer::ButtonState::Pressed == state {
+        let pressed = state == wl_pointer::ButtonState::Pressed;
+        let pos = self.pointer.current_location();
+
+        let consumed = self.dispatch_wm(crate::wm::events::WmEvent::PointerButton {
+            button,
+            pressed,
+            pos,
+            time: std::time::Instant::now(),
+        });
+        if consumed {
+            return;
+        }
+
+        if pressed {
             self.update_keyboard_focus(self.pointer.current_location(), serial);
-        };
+        }
         let pointer = self.pointer.clone();
         pointer.button(
             self,
@@ -703,7 +755,10 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                         None,
                     );
 
-                    crate::backend::shell::fixup_positions(&mut self.space, self.pointer.current_location());
+                    crate::backend::shell::fixup_positions(
+                        &mut self.space,
+                        self.pointer.current_location(),
+                    );
                     self.backend_data.reset_buffers(&output);
                 }
 
@@ -724,7 +779,10 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                         None,
                     );
 
-                    crate::backend::shell::fixup_positions(&mut self.space, self.pointer.current_location());
+                    crate::backend::shell::fixup_positions(
+                        &mut self.space,
+                        self.pointer.current_location(),
+                    );
                     self.backend_data.reset_buffers(&output);
                 }
 
@@ -749,7 +807,10 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     };
                     tracing::info!(?current_transform, ?new_transform, output = ?output.name(), "changing output transform");
                     output.change_current_state(None, Some(new_transform), None, None);
-                    crate::backend::shell::fixup_positions(&mut self.space, self.pointer.current_location());
+                    crate::backend::shell::fixup_positions(
+                        &mut self.space,
+                        self.pointer.current_location(),
+                    );
                     self.backend_data.reset_buffers(&output);
                 }
 
@@ -810,22 +871,9 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         output: &Output,
     ) {
         let output_geo = self.space.output_geometry(output).unwrap();
-
         let pos = evt.position_transformed(output_geo.size) + output_geo.loc.to_f64();
-        let serial = SCOUNTER.next_serial();
 
-        let pointer = self.pointer.clone();
-        let under = self.surface_under(pos);
-        pointer.motion(
-            self,
-            under,
-            &MotionEvent {
-                location: pos,
-                serial,
-                time: evt.time(),
-            },
-        );
-        pointer.frame(self);
+        self.handle_pointer_motion(pos, evt.time());
     }
 
     pub fn release_all_keys(&mut self) {
@@ -1063,8 +1111,6 @@ impl AnvilState<UdevData> {
         evt: B::PointerMotionEvent,
     ) {
         let mut pointer_location = self.pointer.current_location();
-        let serial = SCOUNTER.next_serial();
-
         let pointer = self.pointer.clone();
         let under = self.surface_under(pointer_location);
 
@@ -1155,16 +1201,7 @@ impl AnvilState<UdevData> {
             }
         }
 
-        pointer.motion(
-            self,
-            under,
-            &MotionEvent {
-                location: pointer_location,
-                serial,
-                time: evt.time(),
-            },
-        );
-        pointer.frame(self);
+        self.handle_pointer_motion(pointer_location, evt.time());
 
         // If pointer is now in a constraint region, activate it
         // TODO Anywhere else pointer is moved needs to do this
@@ -1191,8 +1228,6 @@ impl AnvilState<UdevData> {
         _dh: &DisplayHandle,
         evt: B::PointerMotionAbsoluteEvent,
     ) {
-        let serial = SCOUNTER.next_serial();
-
         let max_x = self.space.outputs().fold(0, |acc, o| {
             acc + self.space.output_geometry(o).unwrap().size.w
         });
@@ -1210,19 +1245,7 @@ impl AnvilState<UdevData> {
         // clamp to screen limits
         pointer_location = self.clamp_coords(pointer_location);
 
-        let pointer = self.pointer.clone();
-        let under = self.surface_under(pointer_location);
-
-        pointer.motion(
-            self,
-            under,
-            &MotionEvent {
-                location: pointer_location,
-                serial,
-                time: evt.time(),
-            },
-        );
-        pointer.frame(self);
+        self.handle_pointer_motion(pointer_location, evt.time());
     }
 
     fn on_tablet_tool_axis<B: InputBackend>(&mut self, evt: B::TabletToolAxisEvent) {

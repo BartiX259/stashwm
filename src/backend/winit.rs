@@ -39,14 +39,17 @@ use smithay::{
     wayland::{
         compositor,
         dmabuf::{
-            DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier,
+            DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState,
+            ImportNotifier,
         },
         presentation::Refresh,
     },
 };
 use tracing::{error, info, warn};
 
-use crate::backend::state::{AnvilState, Backend, take_presentation_feedback, update_primary_scanout_output};
+use crate::backend::state::{
+    AnvilState, Backend, take_presentation_feedback, update_primary_scanout_output,
+};
 use crate::backend::{drawing::*, render::*};
 
 pub const OUTPUT_NAME: &str = "winit";
@@ -65,7 +68,12 @@ impl DmabufHandler for AnvilState<WinitData> {
         &mut self.backend_data.dmabuf_state.0
     }
 
-    fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf, notifier: ImportNotifier) {
+    fn dmabuf_imported(
+        &mut self,
+        _global: &DmabufGlobal,
+        dmabuf: Dmabuf,
+        notifier: ImportNotifier,
+    ) {
         if self
             .backend_data
             .backend
@@ -123,15 +131,22 @@ pub fn run_winit() {
         },
     );
     let _global = output.create_global::<AnvilState<WinitData>>(&display.handle());
-    output.change_current_state(Some(mode), Some(Transform::Flipped180), None, Some((0, 0).into()));
+    output.change_current_state(
+        Some(mode),
+        Some(Transform::Flipped180),
+        None,
+        Some((0, 0).into()),
+    );
     output.set_preferred(mode);
 
     #[cfg(feature = "debug")]
     #[allow(deprecated)]
-    let fps_image =
-        image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
-            .decode()
-            .unwrap();
+    let fps_image = image::io::Reader::with_format(
+        std::io::Cursor::new(FPS_NUMBERS_PNG),
+        image::ImageFormat::Png,
+    )
+    .decode()
+    .unwrap();
     #[cfg(feature = "debug")]
     let fps_texture = backend
         .renderer()
@@ -170,10 +185,11 @@ pub fn run_winit() {
     // Note: egl on Mesa requires either v4 or wl_drm (initialized with bind_wl_display)
     let dmabuf_state = if let Some(default_feedback) = dmabuf_default_feedback {
         let mut dmabuf_state = DmabufState::new();
-        let dmabuf_global = dmabuf_state.create_global_with_default_feedback::<AnvilState<WinitData>>(
-            &display.handle(),
-            &default_feedback,
-        );
+        let dmabuf_global = dmabuf_state
+            .create_global_with_default_feedback::<AnvilState<WinitData>>(
+                &display.handle(),
+                &default_feedback,
+            );
         (dmabuf_state, dmabuf_global, Some(default_feedback))
     } else {
         let dmabuf_formats = backend.renderer().dmabuf_formats();
@@ -184,7 +200,11 @@ pub fn run_winit() {
     };
 
     #[cfg(feature = "egl")]
-    if backend.renderer().bind_wl_display(&display.handle()).is_ok() {
+    if backend
+        .renderer()
+        .bind_wl_display(&display.handle())
+        .is_ok()
+    {
         info!("EGL hardware-acceleration enabled");
     };
 
@@ -225,7 +245,9 @@ pub fn run_winit() {
                 };
                 output.change_current_state(Some(mode), None, None, None);
                 output.set_preferred(mode);
-                crate::backend::shell::fixup_positions(&mut state.space, state.pointer.current_location());
+                state.dispatch_wm(crate::wm::events::WmEvent::ScreenResized(
+                    size.to_logical(1),
+                ));
             }
             WinitEvent::Input(event) => state.process_input_event_windowed(event, OUTPUT_NAME),
             _ => (),
@@ -270,24 +292,24 @@ pub fn run_winit() {
             *full_redraw = full_redraw.saturating_sub(1);
             let space = &mut state.space;
             let damage_tracker = &mut state.backend_data.damage_tracker;
-            let show_window_preview = state.show_window_preview;
 
             let dnd_icon = state.dnd_icon.as_ref();
 
             let scale = Scale::from(output.current_scale().fractional_scale());
-            let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = state.cursor_status {
-                compositor::with_states(surface, |states| {
-                    states
-                        .data_map
-                        .get::<Mutex<CursorImageAttributes>>()
-                        .unwrap()
-                        .lock()
-                        .unwrap()
-                        .hotspot
-                })
-            } else {
-                (0, 0).into()
-            };
+            let cursor_hotspot =
+                if let CursorImageStatus::Surface(ref surface) = state.cursor_status {
+                    compositor::with_states(surface, |states| {
+                        states
+                            .data_map
+                            .get::<Mutex<CursorImageAttributes>>()
+                            .unwrap()
+                            .lock()
+                            .unwrap()
+                            .hotspot
+                    })
+                } else {
+                    (0, 0).into()
+                };
             let cursor_pos = state.pointer.current_location();
 
             #[cfg(feature = "debug")]
@@ -313,7 +335,10 @@ pub fn run_winit() {
             let render_res = backend.bind().and_then(|(renderer, mut fb)| {
                 #[cfg(feature = "debug")]
                 if let Some(renderdoc) = renderdoc.as_mut() {
-                    renderdoc.start_frame_capture(renderer.egl_context().get_context_handle(), window_handle);
+                    renderdoc.start_frame_capture(
+                        renderer.egl_context().get_context_handle(),
+                        window_handle,
+                    );
                 }
 
                 let mut elements = Vec::<CustomRenderElements<GlesRenderer>>::new();
@@ -356,7 +381,7 @@ pub fn run_winit() {
                     &mut fb,
                     damage_tracker,
                     age,
-                    show_window_preview,
+                    &state.wm,
                 )
                 .map_err(|err| match err {
                     OutputDamageTrackerError::Rendering(err) => err.into(),
@@ -411,7 +436,9 @@ pub fn run_winit() {
                             output
                                 .current_mode()
                                 .map(|mode| {
-                                    Refresh::fixed(Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
+                                    Refresh::fixed(Duration::from_secs_f64(
+                                        1_000f64 / mode.refresh as f64,
+                                    ))
                                 })
                                 .unwrap_or(Refresh::Unknown),
                             0,
