@@ -201,7 +201,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
 
     pub show_window_preview: bool,
 
-    pub wm: crate::wm::WmEngine,
+    pub wm: crate::wm::WMEngine,
 }
 
 #[derive(Debug)]
@@ -211,7 +211,7 @@ pub struct DndIcon {
 }
 
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
-    pub fn dispatch_wm(&mut self, event: crate::wm::events::WmEvent) -> bool {
+    pub fn dispatch_wm(&mut self, event: crate::wm::events::WMEvent) -> bool {
         let result = self.wm.handle_event(event);
         for effect in result.effects {
             self.apply_effect(effect);
@@ -790,7 +790,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let single_pixel_buffer_state = SinglePixelBufferState::new::<Self>(&dh);
         let fifo_manager_state = FifoManagerState::new::<Self>(&dh);
         let commit_timing_manager_state = CommitTimingManagerState::new::<Self>(&dh);
-        let wm = crate::wm::WmEngine::new(Size::from((1920, 1080)));
+        let wm = crate::wm::WMEngine::new(Size::from((1920, 1080)));
         TextInputManagerState::new::<Self>(&dh);
         InputMethodManagerState::new::<Self, _>(&dh, |_client| true);
         VirtualKeyboardManagerState::new::<Self, _>(&dh, |_client| true);

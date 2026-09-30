@@ -35,7 +35,7 @@ pub enum WMState {
 }
 
 #[derive(Debug)]
-pub struct WmEngine {
+pub struct WMEngine {
     pub screen_size: Size<i32, Logical>,
     pub visible_windows: Vec<WindowElement>,
     pub stashed_windows: Vec<WindowElement>,
@@ -44,7 +44,7 @@ pub struct WmEngine {
     last_pointer_pos: Point<i32, Logical>,
 }
 
-impl WmEngine {
+impl WMEngine {
     pub fn new(screen_size: Size<i32, Logical>) -> Self {
         Self {
             screen_size,
@@ -58,16 +58,16 @@ impl WmEngine {
         }
     }
 
-    pub fn handle_event(&mut self, event: WmEvent) -> EventResult {
+    pub fn handle_event(&mut self, event: WMEvent) -> EventResult {
         let mut effects = Vec::new();
 
         match event {
-            WmEvent::ScreenResized(size) => {
+            WMEvent::ScreenResized(size) => {
                 self.screen_size = size;
                 self.recompute_layout(&mut effects);
                 EventResult::forwarded(effects)
             }
-            WmEvent::WindowCreated(window) => {
+            WMEvent::WindowCreated(window) => {
                 self.visible_windows.push(window.clone());
                 self.recompute_layout(&mut effects);
                 if let WMState::Normal { .. } = self.state {
@@ -75,7 +75,7 @@ impl WmEngine {
                 }
                 EventResult::forwarded(effects)
             }
-            WmEvent::WindowDestroyed(window) => {
+            WMEvent::WindowDestroyed(window) => {
                 self.visible_windows.retain(|w| w != &window);
                 self.stashed_windows.retain(|w| w != &window);
                 self.recompute_layout(&mut effects);
@@ -88,12 +88,12 @@ impl WmEngine {
                 }
                 EventResult::forwarded(effects)
             }
-            WmEvent::PointerMoved { pos, time } => {
+            WMEvent::PointerMoved { pos, time } => {
                 let pixel_pos = pos.to_i32_round();
                 self.last_pointer_pos = pixel_pos;
                 self.handle_pointer_motion(pixel_pos, time, &mut effects)
             }
-            WmEvent::PointerButton {
+            WMEvent::PointerButton {
                 button,
                 pressed,
                 pos,
@@ -103,7 +103,7 @@ impl WmEngine {
                 self.last_pointer_pos = pixel_pos;
                 self.handle_pointer_button(button, pressed, pixel_pos, time, &mut effects)
             }
-            WmEvent::KeyEscape => {
+            WMEvent::KeyEscape => {
                 if let WMState::Normal { .. } = self.state {
                     EventResult::forwarded(effects)
                 } else {
@@ -276,6 +276,11 @@ impl WmEngine {
                             ActionButton::Minimize => {
                                 self.visible_windows.retain(|w| w != &window);
                                 self.stashed_windows.push(window.clone());
+                                let size = Size::new(PREVIEW_SIZE.0 * 2, PREVIEW_SIZE.1 * 2);
+                                effects.push(WMEffect::SetWindowSize {
+                                    window: window.clone(),
+                                    size,
+                                });
                                 effects.push(WMEffect::UnmapWindow(window));
                                 self.recompute_layout(effects);
                             }

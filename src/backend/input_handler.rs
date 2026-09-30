@@ -227,7 +227,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         action
     }
     pub fn handle_pointer_motion(&mut self, pos: Point<f64, Logical>, time: InputTime) {
-        let consumed = self.dispatch_wm(crate::wm::events::WmEvent::PointerMoved {
+        let consumed = self.dispatch_wm(crate::wm::events::WMEvent::PointerMoved {
             pos,
             time: std::time::Instant::now(),
         });
@@ -275,7 +275,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let pressed = state == wl_pointer::ButtonState::Pressed;
         let pos = self.pointer.current_location();
 
-        let consumed = self.dispatch_wm(crate::wm::events::WmEvent::PointerButton {
+        let consumed = self.dispatch_wm(crate::wm::events::WMEvent::PointerButton {
             button,
             pressed,
             pos,

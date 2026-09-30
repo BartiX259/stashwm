@@ -1,4 +1,4 @@
-use super::{ActionButton, StashArea, WMState, WmEngine, layout::*};
+use super::{ActionButton, StashArea, WMState, WMEngine, layout::*};
 use crate::backend::render::{CustomRenderElements, OutputRenderElements};
 use crate::backend::shell::WindowRenderElement;
 use smithay::{
@@ -16,7 +16,7 @@ use smithay::{
     utils::{Logical, Point, Rectangle, Scale, Size},
 };
 
-impl WmEngine {
+impl WMEngine {
     pub fn render_overlays<R>(
         &self,
         renderer: &mut R,

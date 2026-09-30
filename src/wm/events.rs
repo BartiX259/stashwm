@@ -17,7 +17,7 @@ pub enum ActionButton {
     Close,
 }
 
-pub enum WmEvent {
+pub enum WMEvent {
     ScreenResized(Size<i32, Logical>),
     WindowCreated(WindowElement),
     WindowDestroyed(WindowElement),

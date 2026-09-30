@@ -145,7 +145,7 @@ pub fn output_elements<R>(
     space: &Space<WindowElement>,
     custom_elements: impl IntoIterator<Item = CustomRenderElements<R>>,
     renderer: &mut R,
-    wm: &crate::wm::WmEngine,
+    wm: &crate::wm::WMEngine,
 ) -> (
     Vec<OutputRenderElements<R, WindowRenderElement<R>>>,
     Color32F,
@@ -203,7 +203,7 @@ pub fn render_output<'a, 'd, R>(
     framebuffer: &'a mut R::Framebuffer<'_>,
     damage_tracker: &'d mut OutputDamageTracker,
     age: usize,
-    wm: &crate::wm::WmEngine,
+    wm: &crate::wm::WMEngine,
 ) -> Result<RenderOutputResult<'d>, OutputDamageTrackerError<R::Error>>
 where
     R: Renderer + ImportAll + ImportMem,

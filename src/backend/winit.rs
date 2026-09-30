@@ -245,7 +245,7 @@ pub fn run_winit() {
                 };
                 output.change_current_state(Some(mode), None, None, None);
                 output.set_preferred(mode);
-                state.dispatch_wm(crate::wm::events::WmEvent::ScreenResized(
+                state.dispatch_wm(crate::wm::events::WMEvent::ScreenResized(
                     size.to_logical(1),
                 ));
             }
