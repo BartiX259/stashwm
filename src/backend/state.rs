@@ -184,6 +184,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
 
     // input-related fields
     pub suppressed_keys: Vec<Keysym>,
+    pub tap_candidate: Option<Keysym>,
     pub cursor_status: CursorImageStatus,
     pub seat_name: String,
     pub seat: Seat<AnvilState<BackendData>>,
@@ -198,8 +199,6 @@ pub struct AnvilState<BackendData: Backend + 'static> {
 
     #[cfg(feature = "debug")]
     pub renderdoc: Option<renderdoc::RenderDoc<renderdoc::V141>>,
-
-    pub show_window_preview: bool,
 
     pub wm: crate::wm::WMEngine,
 }
@@ -255,6 +254,22 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 #[cfg(feature = "xwayland")]
                 if let Some(xsurface) = window.0.x11_surface() {
                     let _ = xsurface.close();
+                }
+            }
+            WMEffect::Spawn(cmd) => {
+                let mut command = std::process::Command::new(&cmd);
+
+                if let Some(socket) = &self.socket_name {
+                    command.env("WAYLAND_DISPLAY", socket);
+                }
+
+                #[cfg(feature = "xwayland")]
+                if let Some(xdisplay) = self.xdisplay {
+                    command.env("DISPLAY", format!(":{}", xdisplay));
+                }
+
+                if let Err(err) = command.spawn() {
+                    tracing::error!(?cmd, ?err, "Failed to spawn command");
                 }
             }
         }
@@ -863,6 +878,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             image_copy_capture_state,
             dnd_icon: None,
             suppressed_keys: Vec::new(),
+            tap_candidate: None,
             cursor_status: CursorImageStatus::default_named(),
             seat_name,
             seat,
@@ -878,7 +894,6 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             xdisplay: None,
             #[cfg(feature = "debug")]
             renderdoc: renderdoc::RenderDoc::new().ok(),
-            show_window_preview: false,
             wm,
         }
     }

@@ -1,11 +1,14 @@
-use std::{convert::TryInto, process::Command, sync::atomic::Ordering};
+use std::convert::TryInto;
 
-use crate::backend::{AnvilState, focus::PointerFocusTarget, shell::FullscreenSurface};
+use crate::{
+    backend::{AnvilState, focus::PointerFocusTarget, shell::FullscreenSurface},
+    wm::events::WMEvent,
+};
 
 #[cfg(feature = "udev")]
 use crate::backend::udev::UdevData;
 #[cfg(feature = "udev")]
-use smithay::{backend::renderer::DebugFlags, input::tablet};
+use smithay::input::tablet;
 
 use smithay::{
     backend::input::{
@@ -16,7 +19,7 @@ use smithay::{
     },
     desktop::{WindowSurfaceType, layer_map_for_output},
     input::{
-        keyboard::{FilterResult, Keysym, ModifiersState, keysyms as xkb},
+        keyboard::FilterResult,
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
         pointer::{
             GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
@@ -26,12 +29,8 @@ use smithay::{
         tablet::{TabletDescriptor, TabletSeatTrait},
         touch::{DownEvent, UpEvent},
     },
-    output::Scale,
-    reexports::{
-        wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1,
-        wayland_server::protocol::wl_pointer,
-    },
-    utils::{Logical, Point, SERIAL_COUNTER as SCOUNTER, Serial, Transform},
+    reexports::wayland_server::protocol::wl_pointer,
+    utils::{Logical, Point, SERIAL_COUNTER as SCOUNTER, Serial},
     wayland::{
         input_method::InputMethodSeat,
         keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat,
@@ -43,17 +42,14 @@ use smithay::backend::input::AbsolutePositionEvent;
 
 #[cfg(any(feature = "winit", feature = "x11"))]
 use smithay::output::Output;
-use tracing::{debug, error, info};
+use tracing::debug;
 
 use crate::backend::state::Backend;
 #[cfg(feature = "udev")]
 use smithay::{
-    backend::{
-        input::{
-            PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
-            TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
-        },
-        session::Session,
+    backend::input::{
+        PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
+        TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
     },
     input::pointer::RelativeMotionEvent,
     reexports::wayland_server::DisplayHandle,
@@ -66,76 +62,7 @@ use smithay::{
 impl<BackendData: Backend> AnvilState<BackendData> {
     // Allow in this method because of existing usage
     #[allow(clippy::uninlined_format_args)]
-    fn process_common_key_action(&mut self, action: KeyAction) {
-        match action {
-            KeyAction::None => (),
-
-            KeyAction::Quit => {
-                info!("Quitting.");
-                self.running.store(false, Ordering::SeqCst);
-            }
-
-            KeyAction::Run(cmd) => {
-                info!(cmd, "Starting program");
-
-                if let Err(e) = Command::new(&cmd)
-                    .envs(
-                        self.socket_name
-                            .clone()
-                            .map(|v| ("WAYLAND_DISPLAY", v))
-                            .into_iter()
-                            .chain(
-                                #[cfg(feature = "xwayland")]
-                                self.xdisplay.map(|v| ("DISPLAY", format!(":{v}"))),
-                                #[cfg(not(feature = "xwayland"))]
-                                None,
-                            ),
-                    )
-                    .spawn()
-                {
-                    error!(cmd, err = %e, "Failed to start program");
-                }
-            }
-
-            KeyAction::TogglePreview => {
-                self.show_window_preview = !self.show_window_preview;
-            }
-
-            KeyAction::ToggleDecorations => {
-                for element in self.space.elements() {
-                    #[allow(irrefutable_let_patterns)]
-                    if let Some(toplevel) = element.0.toplevel() {
-                        let mode_changed = toplevel.with_pending_state(|state| {
-                            if let Some(current_mode) = state.decoration_mode {
-                                let new_mode = if current_mode
-                                    == zxdg_toplevel_decoration_v1::Mode::ClientSide
-                                {
-                                    zxdg_toplevel_decoration_v1::Mode::ServerSide
-                                } else {
-                                    zxdg_toplevel_decoration_v1::Mode::ClientSide
-                                };
-                                state.decoration_mode = Some(new_mode);
-                                true
-                            } else {
-                                false
-                            }
-                        });
-
-                        if mode_changed && toplevel.is_initial_configure_sent() {
-                            toplevel.send_pending_configure();
-                        }
-                    }
-                }
-            }
-
-            _ => unreachable!(
-                "Common key action handler encountered backend specific action {:?}",
-                action
-            ),
-        }
-    }
-
-    fn keyboard_key_to_action<B: InputBackend>(&mut self, evt: B::KeyboardKeyEvent) -> KeyAction {
+    fn handle_keyboard_key<B: InputBackend>(&mut self, evt: B::KeyboardKeyEvent) {
         let keycode = evt.key_code();
         let state = evt.state();
         debug!(?keycode, ?state, "key");
@@ -159,7 +86,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     keyboard.input::<(), _>(self, keycode, state, serial, time, |_, _, _| {
                         FilterResult::Forward
                     });
-                    return KeyAction::None;
+                    return;
                 };
             }
         }
@@ -174,60 +101,68 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             .map(|inhibitor| inhibitor.is_active())
             .unwrap_or(false);
 
-        let action = keyboard
-            .input(
-                self,
-                keycode,
-                state,
-                serial,
-                time,
-                |_, modifiers, handle| {
-                    let keysym = handle.modified_sym();
+        keyboard.input(
+            self,
+            keycode,
+            state,
+            serial,
+            time,
+            |state_data, modifiers, handle| {
+                let keysym = handle.modified_sym();
 
-                    debug!(
-                        ?state,
-                        mods = ?modifiers,
-                        keysym = ::xkbcommon::xkb::keysym_get_name(keysym),
-                        "keysym"
-                    );
+                debug!(
+                    ?state,
+                    mods = ?modifiers,
+                    keysym = ::xkbcommon::xkb::keysym_get_name(keysym),
+                    "keysym"
+                );
 
-                    // If the key is pressed and triggered a action
-                    // we will not forward the key to the client.
-                    // Additionally add the key to the suppressed keys
-                    // so that we can decide on a release if the key
-                    // should be forwarded to the client or not.
-                    if let KeyState::Pressed = state {
-                        if !inhibited {
-                            let action = process_keyboard_shortcut(*modifiers, keysym);
-
-                            if action.is_some() {
-                                suppressed_keys.push(keysym);
-                            }
-
-                            action
-                                .map(FilterResult::Intercept)
-                                .unwrap_or(FilterResult::Forward)
-                        } else {
-                            FilterResult::Forward
-                        }
+                // If the key is pressed and triggered a action
+                // we will not forward the key to the client.
+                // Additionally add the key to the suppressed keys
+                // so that we can decide on a release if the key
+                // should be forwarded to the client or not.
+                if let KeyState::Pressed = state {
+                    if keyboard.pressed_keys().iter().count() == 1 {
+                        state_data.tap_candidate = Some(keysym);
                     } else {
-                        let suppressed = suppressed_keys.contains(&keysym);
-                        if suppressed {
-                            suppressed_keys.retain(|k| *k != keysym);
-                            FilterResult::Intercept(KeyAction::None)
-                        } else {
-                            FilterResult::Forward
+                        state_data.tap_candidate = None;
+                    }
+                    if !inhibited {
+                        let consumed = state_data.dispatch_wm(WMEvent::KeyPress {
+                            modifiers: *modifiers,
+                            keysym,
+                        });
+                        if consumed {
+                            suppressed_keys.push(keysym);
+                            return FilterResult::Intercept(());
                         }
                     }
-                },
-            )
-            .unwrap_or(KeyAction::None);
+                } else {
+                    // Key released
+                    let mut tap_consumed = false;
+                    if let Some(tapped_sym) = state_data.tap_candidate.take() {
+                        if tapped_sym == keysym && !inhibited {
+                            tap_consumed = state_data.dispatch_wm(WMEvent::KeyTap(keysym));
+                        }
+                    }
+                    // If we swallowed the press, swallow the release
+                    let suppressed = suppressed_keys.contains(&keysym);
+                    if suppressed {
+                        suppressed_keys.retain(|k| *k != keysym);
+                    }
+                    if tap_consumed || suppressed {
+                        return FilterResult::Intercept(());
+                    }
+                }
+                FilterResult::Forward
+            },
+        );
 
         self.suppressed_keys = suppressed_keys;
-        action
     }
     pub fn handle_pointer_motion(&mut self, pos: Point<f64, Logical>, time: InputTime) {
-        let consumed = self.dispatch_wm(crate::wm::events::WMEvent::PointerMoved {
+        let consumed = self.dispatch_wm(WMEvent::PointerMoved {
             pos,
             time: std::time::Instant::now(),
         });
@@ -275,7 +210,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let pressed = state == wl_pointer::ButtonState::Pressed;
         let pos = self.pointer.current_location();
 
-        let consumed = self.dispatch_wm(crate::wm::events::WMEvent::PointerButton {
+        let consumed = self.dispatch_wm(WMEvent::PointerButton {
             button,
             pressed,
             pos,
@@ -737,98 +672,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         output_name: &str,
     ) {
         match event {
-            InputEvent::Keyboard { event } => match self.keyboard_key_to_action::<B>(event) {
-                KeyAction::ScaleUp => {
-                    let output = self
-                        .space
-                        .outputs()
-                        .find(|o| o.name() == output_name)
-                        .unwrap()
-                        .clone();
-
-                    let current_scale = output.current_scale().fractional_scale();
-                    let new_scale = current_scale + 0.25;
-                    output.change_current_state(
-                        None,
-                        None,
-                        Some(Scale::Fractional(new_scale)),
-                        None,
-                    );
-
-                    crate::backend::shell::fixup_positions(
-                        &mut self.space,
-                        self.pointer.current_location(),
-                    );
-                    self.backend_data.reset_buffers(&output);
-                }
-
-                KeyAction::ScaleDown => {
-                    let output = self
-                        .space
-                        .outputs()
-                        .find(|o| o.name() == output_name)
-                        .unwrap()
-                        .clone();
-
-                    let current_scale = output.current_scale().fractional_scale();
-                    let new_scale = f64::max(1.0, current_scale - 0.25);
-                    output.change_current_state(
-                        None,
-                        None,
-                        Some(Scale::Fractional(new_scale)),
-                        None,
-                    );
-
-                    crate::backend::shell::fixup_positions(
-                        &mut self.space,
-                        self.pointer.current_location(),
-                    );
-                    self.backend_data.reset_buffers(&output);
-                }
-
-                KeyAction::RotateOutput => {
-                    let output = self
-                        .space
-                        .outputs()
-                        .find(|o| o.name() == output_name)
-                        .unwrap()
-                        .clone();
-
-                    let current_transform = output.current_transform();
-                    let new_transform = match current_transform {
-                        Transform::Normal => Transform::_90,
-                        Transform::_90 => Transform::_180,
-                        Transform::_180 => Transform::_270,
-                        Transform::_270 => Transform::Flipped,
-                        Transform::Flipped => Transform::Flipped90,
-                        Transform::Flipped90 => Transform::Flipped180,
-                        Transform::Flipped180 => Transform::Flipped270,
-                        Transform::Flipped270 => Transform::Normal,
-                    };
-                    tracing::info!(?current_transform, ?new_transform, output = ?output.name(), "changing output transform");
-                    output.change_current_state(None, Some(new_transform), None, None);
-                    crate::backend::shell::fixup_positions(
-                        &mut self.space,
-                        self.pointer.current_location(),
-                    );
-                    self.backend_data.reset_buffers(&output);
-                }
-
-                action => match action {
-                    KeyAction::None
-                    | KeyAction::Quit
-                    | KeyAction::Run(_)
-                    | KeyAction::TogglePreview
-                    | KeyAction::ToggleDecorations => self.process_common_key_action(action),
-
-                    _ => tracing::warn!(
-                        ?action,
-                        output_name,
-                        "Key action unsupported on on output backend.",
-                    ),
-                },
-            },
-
+            InputEvent::Keyboard { event } => self.handle_keyboard_key::<B>(event),
             InputEvent::PointerMotionAbsolute { event } => {
                 let output = self
                     .space
@@ -899,173 +743,7 @@ impl AnvilState<UdevData> {
         event: InputEvent<B>,
     ) {
         match event {
-            InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {
-                #[cfg(feature = "udev")]
-                KeyAction::VtSwitch(vt) => {
-                    info!(to = vt, "Trying to switch vt");
-                    if let Err(err) = self.backend_data.session.change_vt(vt) {
-                        error!(vt, "Error switching vt: {}", err);
-                    }
-                }
-                KeyAction::Screen(num) => {
-                    let geometry = self
-                        .space
-                        .outputs()
-                        .nth(num)
-                        .map(|o| self.space.output_geometry(o).unwrap());
-
-                    if let Some(geometry) = geometry {
-                        let x = geometry.loc.x as f64 + geometry.size.w as f64 / 2.0;
-                        let y = geometry.size.h as f64 / 2.0;
-                        let location = (x, y).into();
-                        let pointer = self.pointer.clone();
-                        let under = self.surface_under(location);
-                        pointer.motion(
-                            self,
-                            under,
-                            &MotionEvent {
-                                location,
-                                serial: SCOUNTER.next_serial(),
-                                time: InputTime::now(),
-                            },
-                        );
-                        pointer.frame(self);
-                    }
-                }
-                KeyAction::ScaleUp => {
-                    let pos = self.pointer.current_location().to_i32_round();
-                    let output = self
-                        .space
-                        .outputs()
-                        .find(|o| self.space.output_geometry(o).unwrap().contains(pos))
-                        .cloned();
-
-                    if let Some(output) = output {
-                        let (output_location, scale) = (
-                            self.space.output_geometry(&output).unwrap().loc,
-                            output.current_scale().fractional_scale(),
-                        );
-                        let new_scale = scale + 0.25;
-                        output.change_current_state(
-                            None,
-                            None,
-                            Some(Scale::Fractional(new_scale)),
-                            None,
-                        );
-
-                        let rescale = scale / new_scale;
-                        let output_location = output_location.to_f64();
-                        let mut pointer_output_location =
-                            self.pointer.current_location() - output_location;
-                        pointer_output_location.x *= rescale;
-                        pointer_output_location.y *= rescale;
-                        let pointer_location = output_location + pointer_output_location;
-
-                        crate::backend::shell::fixup_positions(&mut self.space, pointer_location);
-                        let pointer = self.pointer.clone();
-                        let under = self.surface_under(pointer_location);
-                        pointer.motion(
-                            self,
-                            under,
-                            &MotionEvent {
-                                location: pointer_location,
-                                serial: SCOUNTER.next_serial(),
-                                time: InputTime::now(),
-                            },
-                        );
-                        pointer.frame(self);
-                        self.backend_data.reset_buffers(&output);
-                    }
-                }
-                KeyAction::ScaleDown => {
-                    let pos = self.pointer.current_location().to_i32_round();
-                    let output = self
-                        .space
-                        .outputs()
-                        .find(|o| self.space.output_geometry(o).unwrap().contains(pos))
-                        .cloned();
-
-                    if let Some(output) = output {
-                        let (output_location, scale) = (
-                            self.space.output_geometry(&output).unwrap().loc,
-                            output.current_scale().fractional_scale(),
-                        );
-                        let new_scale = f64::max(1.0, scale - 0.25);
-                        output.change_current_state(
-                            None,
-                            None,
-                            Some(Scale::Fractional(new_scale)),
-                            None,
-                        );
-
-                        let rescale = scale / new_scale;
-                        let output_location = output_location.to_f64();
-                        let mut pointer_output_location =
-                            self.pointer.current_location() - output_location;
-                        pointer_output_location.x *= rescale;
-                        pointer_output_location.y *= rescale;
-                        let pointer_location = output_location + pointer_output_location;
-
-                        crate::backend::shell::fixup_positions(&mut self.space, pointer_location);
-                        let pointer = self.pointer.clone();
-                        let under = self.surface_under(pointer_location);
-                        pointer.motion(
-                            self,
-                            under,
-                            &MotionEvent {
-                                location: pointer_location,
-                                serial: SCOUNTER.next_serial(),
-                                time: InputTime::now(),
-                            },
-                        );
-                        pointer.frame(self);
-                        self.backend_data.reset_buffers(&output);
-                    }
-                }
-                KeyAction::RotateOutput => {
-                    let pos = self.pointer.current_location().to_i32_round();
-                    let output = self
-                        .space
-                        .outputs()
-                        .find(|o| self.space.output_geometry(o).unwrap().contains(pos))
-                        .cloned();
-
-                    if let Some(output) = output {
-                        let current_transform = output.current_transform();
-                        let new_transform = match current_transform {
-                            Transform::Normal => Transform::_90,
-                            Transform::_90 => Transform::_180,
-                            Transform::_180 => Transform::_270,
-                            Transform::_270 => Transform::Flipped,
-                            Transform::Flipped => Transform::Flipped90,
-                            Transform::Flipped90 => Transform::Flipped180,
-                            Transform::Flipped180 => Transform::Flipped270,
-                            Transform::Flipped270 => Transform::Normal,
-                        };
-                        output.change_current_state(None, Some(new_transform), None, None);
-                        crate::backend::shell::fixup_positions(
-                            &mut self.space,
-                            self.pointer.current_location(),
-                        );
-                        self.backend_data.reset_buffers(&output);
-                    }
-                }
-                KeyAction::ToggleTint => {
-                    let mut debug_flags = self.backend_data.debug_flags();
-                    debug_flags.toggle(DebugFlags::TINT);
-                    self.backend_data.set_debug_flags(debug_flags);
-                }
-
-                action => match action {
-                    KeyAction::None
-                    | KeyAction::Quit
-                    | KeyAction::Run(_)
-                    | KeyAction::TogglePreview
-                    | KeyAction::ToggleDecorations => self.process_common_key_action(action),
-
-                    _ => unreachable!(),
-                },
-            },
+            InputEvent::Keyboard { event, .. } => self.handle_keyboard_key::<B>(event),
             InputEvent::PointerMotion { event, .. } => self.on_pointer_move::<B>(dh, event),
             InputEvent::PointerMotionAbsolute { event, .. } => {
                 self.on_pointer_move_absolute::<B>(dh, event)
@@ -1448,61 +1126,5 @@ impl AnvilState<UdevData> {
         } else {
             (clamped_x, pos_y).into()
         }
-    }
-}
-
-/// Possible results of a keyboard action
-#[allow(dead_code)] // some of these are only read if udev is enabled
-#[derive(Debug)]
-enum KeyAction {
-    /// Quit the compositor
-    Quit,
-    /// Trigger a vt-switch
-    VtSwitch(i32),
-    /// run a command
-    Run(String),
-    /// Switch the current screen
-    Screen(usize),
-    ScaleUp,
-    ScaleDown,
-    TogglePreview,
-    RotateOutput,
-    ToggleTint,
-    ToggleDecorations,
-    /// Do nothing more
-    None,
-}
-
-fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> Option<KeyAction> {
-    if modifiers.ctrl && modifiers.alt && keysym == Keysym::BackSpace
-        || modifiers.logo && keysym == Keysym::q
-    {
-        // ctrl+alt+backspace = quit
-        // logo + q = quit
-        Some(KeyAction::Quit)
-    } else if (xkb::KEY_XF86Switch_VT_1..=xkb::KEY_XF86Switch_VT_12).contains(&keysym.raw()) {
-        // VTSwitch
-        Some(KeyAction::VtSwitch(
-            (keysym.raw() - xkb::KEY_XF86Switch_VT_1 + 1) as i32,
-        ))
-    } else if modifiers.logo && keysym == Keysym::Return {
-        // run terminal
-        Some(KeyAction::Run("alacritty".into()))
-    } else if modifiers.logo && (xkb::KEY_1..=xkb::KEY_9).contains(&keysym.raw()) {
-        Some(KeyAction::Screen((keysym.raw() - xkb::KEY_1) as usize))
-    } else if modifiers.logo && modifiers.shift && keysym == Keysym::M {
-        Some(KeyAction::ScaleDown)
-    } else if modifiers.logo && modifiers.shift && keysym == Keysym::P {
-        Some(KeyAction::ScaleUp)
-    } else if modifiers.logo && modifiers.shift && keysym == Keysym::W {
-        Some(KeyAction::TogglePreview)
-    } else if modifiers.logo && modifiers.shift && keysym == Keysym::R {
-        Some(KeyAction::RotateOutput)
-    } else if modifiers.logo && modifiers.shift && keysym == Keysym::T {
-        Some(KeyAction::ToggleTint)
-    } else if modifiers.logo && modifiers.shift && keysym == Keysym::D {
-        Some(KeyAction::ToggleDecorations)
-    } else {
-        None
     }
 }

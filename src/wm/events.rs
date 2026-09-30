@@ -1,5 +1,8 @@
 use crate::backend::shell::WindowElement;
-use smithay::utils::{Logical, Point, Size};
+use smithay::{
+    input::keyboard::{Keysym, ModifiersState},
+    utils::{Logical, Point, Size},
+};
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,7 +34,11 @@ pub enum WMEvent {
         pos: Point<f64, Logical>,
         time: Instant,
     },
-    KeyEscape,
+    KeyPress {
+        modifiers: ModifiersState,
+        keysym: Keysym,
+    },
+    KeyTap(Keysym),
 }
 
 #[derive(Debug)]
@@ -47,6 +54,7 @@ pub enum WMEffect {
     },
     SetFocus(Option<WindowElement>),
     CloseWindow(WindowElement),
+    Spawn(String),
 }
 
 pub struct EventResult {
