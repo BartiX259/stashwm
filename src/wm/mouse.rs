@@ -5,7 +5,7 @@ use crate::wm::ActionButton;
 use crate::wm::StashArea;
 use crate::wm::WMEngine;
 use crate::wm::WMState;
-use smithay::utils::{Logical, Point, Size};
+use smithay::utils::{Logical, Point};
 
 impl WMEngine {
     pub fn handle_pointer_motion(
@@ -25,20 +25,12 @@ impl WMEngine {
                 if let Some(edge) = self.rebound.on_motion(pos, self.screen_size, time) {
                     match edge {
                         Edge::Bottom => {
-                            self.state = WMState::StashOpened {
-                                mouse_area: StashArea::Outside,
-                            };
-                            effects.push(BackendEffect::SetFocus(None));
+                            self.toggle_stash(effects);
                             return EventResult::consumed(std::mem::take(effects));
                         }
                         Edge::Left | Edge::Right => {
                             if let Some(target) = self.get_window_for_edge(edge, pos.y) {
-                                self.state = WMState::WindowSelected {
-                                    window: target,
-                                    hovered_window: None,
-                                    hovered_button: None,
-                                };
-                                effects.push(BackendEffect::SetFocus(None));
+                                self.select_window(target, effects);
                                 return EventResult::consumed(std::mem::take(effects));
                             }
                         }
@@ -148,45 +140,12 @@ impl WMEngine {
                 } => {
                     if let Some(btn) = hovered_button {
                         match btn {
-                            ActionButton::Close => {
-                                self.visible_windows.retain(|w| w != &window);
-                                effects.push(BackendEffect::CloseWindow(window));
-                                self.recompute_layout(effects);
-                            }
-                            ActionButton::Minimize => {
-                                self.visible_windows.retain(|w| w != &window);
-                                self.stashed_windows.push(window.clone());
-                                let size = Size::new(PREVIEW_SIZE.0 * 2, PREVIEW_SIZE.1 * 2);
-                                effects.push(BackendEffect::SetWindowSize {
-                                    window: window.clone(),
-                                    size,
-                                });
-                                effects.push(BackendEffect::UnmapWindow(window));
-                                self.recompute_layout(effects);
-                            }
-                            ActionButton::Maximize => {
-                                let others: Vec<_> = self
-                                    .visible_windows
-                                    .drain(..)
-                                    .filter(|w| w != &window)
-                                    .collect();
-                                for other in others {
-                                    effects.push(BackendEffect::UnmapWindow(other.clone()));
-                                    self.stashed_windows.push(other);
-                                }
-                                self.visible_windows = vec![window.clone()];
-                                self.recompute_layout(effects);
-                                effects.push(BackendEffect::SetFocus(Some(window)));
-                            }
+                            ActionButton::Close => self.close_window(window, effects),
+                            ActionButton::Minimize => self.minimize_window(window, effects),
+                            ActionButton::Maximize => self.maximize_window(window, effects),
                         }
                     } else if let Some(target) = hovered_window {
-                        // Swap positions
-                        let idx1 = self.visible_windows.iter().position(|w| w == &window);
-                        let idx2 = self.visible_windows.iter().position(|w| w == &target);
-                        if let (Some(i1), Some(i2)) = (idx1, idx2) {
-                            self.visible_windows.swap(i1, i2);
-                            self.recompute_layout(effects);
-                        }
+                        self.swap_windows(window, target, effects);
                     }
 
                     self.normal_state_under_cursor(effects);
@@ -194,34 +153,15 @@ impl WMEngine {
                 }
                 WMState::StashOpened { mouse_area } => {
                     match mouse_area {
-                        StashArea::Preview(win) => {
-                            self.stashed_windows.retain(|w| w != &win);
-                            self.visible_windows.push(win.clone());
-                            self.recompute_layout(effects);
-                            effects.push(BackendEffect::SetFocus(Some(win)));
-                            if self.stashed_windows.is_empty() {
-                                self.normal_state_under_cursor(effects);
-                            }
+                        StashArea::Preview(window) => {
+                            self.restore_stashed(window, effects);
                         }
-                        StashArea::PreviewClose(win) => {
-                            self.stashed_windows.retain(|w| w != &win);
-                            effects.push(BackendEffect::CloseWindow(win));
-                            if self.stashed_windows.is_empty() {
-                                self.normal_state_under_cursor(effects);
-                            }
-                        }
+                        StashArea::PreviewClose(window) => self.close_stashed(window, effects),
                         StashArea::RestoreAll => {
-                            let all = std::mem::take(&mut self.stashed_windows);
-                            self.visible_windows.extend(all);
-                            self.recompute_layout(effects);
-                            self.normal_state_under_cursor(effects);
+                            self.restore_all_stashed(effects);
                         }
                         StashArea::CloseAll => {
-                            let all = std::mem::take(&mut self.stashed_windows);
-                            for w in all {
-                                effects.push(BackendEffect::CloseWindow(w));
-                            }
-                            self.normal_state_under_cursor(effects);
+                            self.close_all_stashed(effects);
                         }
                         StashArea::Background => {}
                         StashArea::Outside => {

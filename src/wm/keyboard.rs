@@ -4,7 +4,7 @@ use smithay::input::keyboard::{Keysym, ModifiersState};
 // use super::layout::*;
 // use crate::wm::StashArea;
 use crate::{
-    protocol::{EventResult, BackendEffect},
+    protocol::{BackendEffect, EventResult},
     wm::{WMEngine, WMState},
 };
 // use crate::wm::WMState;
@@ -21,13 +21,10 @@ impl WMEngine {
         match &self.state {
             WMState::Normal { active_window } => {
                 if modifiers.logo && keysym == Keysym::Return {
-                    effects.push(BackendEffect::Spawn("alacritty".to_string()));
+                    self.spawn_command("alacritty".to_string(), effects);
                 } else if modifiers.logo && keysym == Keysym::z {
                     if let Some(window) = active_window {
-                        self.visible_windows.retain(|w| w != window);
-                        effects.push(BackendEffect::CloseWindow(window.clone()));
-                        self.recompute_layout(effects);
-                        self.normal_state_under_cursor(effects);
+                        self.close_window(window.clone(), effects);
                     }
                 } else {
                     return EventResult::empty_forwarded();
@@ -40,9 +37,9 @@ impl WMEngine {
     pub fn handle_tap(&mut self, keysym: Keysym, effects: &mut Vec<BackendEffect>) -> EventResult {
         tracing::info!("tap {:?}", keysym);
         match &self.state {
-            WMState::Normal { active_window } => {
+            WMState::Normal { .. } => {
                 if keysym == Keysym::Super_L {
-                    effects.push(BackendEffect::Spawn("alacritty".to_string()));
+                    self.spawn_command("alacritty".to_string(), effects);
                 } else {
                     return EventResult::empty_forwarded();
                 }
