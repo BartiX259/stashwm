@@ -2,7 +2,7 @@ use std::convert::TryInto;
 
 use crate::{
     backend::{AnvilState, focus::PointerFocusTarget, shell::FullscreenSurface},
-    wm::events::WMEvent,
+    protocol::BackendEvent,
 };
 
 #[cfg(feature = "udev")]
@@ -129,7 +129,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                         state_data.tap_candidate = None;
                     }
                     if !inhibited {
-                        let consumed = state_data.dispatch_wm(WMEvent::KeyPress {
+                        let consumed = state_data.dispatch_wm(BackendEvent::KeyPress {
                             modifiers: *modifiers,
                             keysym,
                         });
@@ -143,7 +143,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     let mut tap_consumed = false;
                     if let Some(tapped_sym) = state_data.tap_candidate.take() {
                         if tapped_sym == keysym && !inhibited {
-                            tap_consumed = state_data.dispatch_wm(WMEvent::KeyTap(keysym));
+                            tap_consumed = state_data.dispatch_wm(BackendEvent::KeyTap(keysym));
                         }
                     }
                     // If we swallowed the press, swallow the release
@@ -162,7 +162,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         self.suppressed_keys = suppressed_keys;
     }
     pub fn handle_pointer_motion(&mut self, pos: Point<f64, Logical>, time: InputTime) {
-        let consumed = self.dispatch_wm(WMEvent::PointerMoved {
+        let consumed = self.dispatch_wm(BackendEvent::PointerMoved {
             pos,
             time: std::time::Instant::now(),
         });
@@ -210,7 +210,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let pressed = state == wl_pointer::ButtonState::Pressed;
         let pos = self.pointer.current_location();
 
-        let consumed = self.dispatch_wm(WMEvent::PointerButton {
+        let consumed = self.dispatch_wm(BackendEvent::PointerButton {
             button,
             pressed,
             pos,

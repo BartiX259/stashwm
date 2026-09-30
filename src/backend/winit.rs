@@ -47,10 +47,13 @@ use smithay::{
 };
 use tracing::{error, info, warn};
 
-use crate::backend::state::{
-    AnvilState, Backend, take_presentation_feedback, update_primary_scanout_output,
-};
 use crate::backend::{drawing::*, render::*};
+use crate::{
+    backend::state::{
+        AnvilState, Backend, take_presentation_feedback, update_primary_scanout_output,
+    },
+    protocol::BackendEvent,
+};
 
 pub const OUTPUT_NAME: &str = "winit";
 
@@ -245,9 +248,7 @@ pub fn run_winit() {
                 };
                 output.change_current_state(Some(mode), None, None, None);
                 output.set_preferred(mode);
-                state.dispatch_wm(crate::wm::events::WMEvent::ScreenResized(
-                    size.to_logical(1),
-                ));
+                state.dispatch_wm(BackendEvent::ScreenResized(size.to_logical(1)));
             }
             WinitEvent::Input(event) => state.process_input_event_windowed(event, OUTPUT_NAME),
             _ => (),

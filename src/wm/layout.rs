@@ -1,4 +1,4 @@
-use super::events::ActionButton;
+use super::ActionButton;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
 pub const PREVIEW_SIZE: (i32, i32) = (300, 200);

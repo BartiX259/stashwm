@@ -2,6 +2,7 @@
 #![allow(clippy::collapsible_match)]
 
 pub mod backend;
+pub mod protocol;
 pub mod wm;
 
 // Re-export AnvilState so main.rs doesn't break

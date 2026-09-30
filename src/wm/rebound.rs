@@ -1,10 +1,17 @@
-use super::events::Edge;
 use smithay::utils::{Logical, Point, Size};
 use std::time::{Duration, Instant};
 
 const EDGE_MARGIN: i32 = 20;
 const REBOUND_THRESHOLD: i32 = 30;
 const REBOUND_TIMEOUT: Duration = Duration::from_millis(350);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Edge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rebound {

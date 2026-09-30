@@ -1,16 +1,15 @@
-pub mod events;
+pub mod actions;
 pub mod keyboard;
 pub mod layout;
 pub mod mouse;
 pub mod rebound;
 pub mod render;
 
-use crate::backend::shell::WindowElement;
-use events::*;
+use crate::protocol::*;
+use crate::{backend::shell::WindowElement, wm::rebound::Edge};
 use layout::*;
 use rebound::Rebound;
 use smithay::utils::{Logical, Point, Rectangle, Size};
-use tracing::info;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StashArea {
@@ -20,6 +19,13 @@ pub enum StashArea {
     PreviewClose(WindowElement),
     CloseAll,
     RestoreAll,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionButton {
+    Minimize,
+    Maximize,
+    Close,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -61,16 +67,16 @@ impl WMEngine {
         }
     }
 
-    pub fn handle_event(&mut self, event: WMEvent) -> EventResult {
+    pub fn handle_event(&mut self, event: BackendEvent) -> EventResult {
         let mut effects = Vec::new();
 
         match event {
-            WMEvent::ScreenResized(size) => {
+            BackendEvent::ScreenResized(size) => {
                 self.screen_size = size;
                 self.recompute_layout(&mut effects);
                 EventResult::forwarded(effects)
             }
-            WMEvent::WindowCreated(window) => {
+            BackendEvent::WindowCreated(window) => {
                 self.visible_windows.push(window.clone());
                 self.recompute_layout(&mut effects);
                 if let WMState::Normal { .. } = self.state {
@@ -78,7 +84,7 @@ impl WMEngine {
                 }
                 EventResult::forwarded(effects)
             }
-            WMEvent::WindowDestroyed(window) => {
+            BackendEvent::WindowDestroyed(window) => {
                 self.visible_windows.retain(|w| w != &window);
                 self.stashed_windows.retain(|w| w != &window);
                 self.recompute_layout(&mut effects);
@@ -91,12 +97,12 @@ impl WMEngine {
                 }
                 EventResult::forwarded(effects)
             }
-            WMEvent::PointerMoved { pos, time } => {
+            BackendEvent::PointerMoved { pos, time } => {
                 let pixel_pos = pos.to_i32_round();
                 self.last_pointer_pos = pixel_pos;
                 self.handle_pointer_motion(pixel_pos, time, &mut effects)
             }
-            WMEvent::PointerButton {
+            BackendEvent::PointerButton {
                 button,
                 pressed,
                 pos,
@@ -106,21 +112,21 @@ impl WMEngine {
                 self.last_pointer_pos = pixel_pos;
                 self.handle_pointer_button(button, pressed, pixel_pos, time, &mut effects)
             }
-            WMEvent::KeyPress { modifiers, keysym } => {
+            BackendEvent::KeyPress { modifiers, keysym } => {
                 self.handle_keypress(modifiers, keysym, &mut effects)
             }
-            WMEvent::KeyTap(keysym) => self.handle_tap(keysym, &mut effects),
+            BackendEvent::KeyTap(keysym) => self.handle_tap(keysym, &mut effects),
         }
     }
 
-    fn recompute_layout(&self, effects: &mut Vec<WMEffect>) {
+    fn recompute_layout(&self, effects: &mut Vec<BackendEffect>) {
         let tiles = master_slave_layout(self.screen_size, self.visible_windows.len(), 10);
         for (win, tile) in self.visible_windows.iter().zip(tiles.into_iter()) {
-            effects.push(WMEffect::MapWindow {
+            effects.push(BackendEffect::MapWindow {
                 window: win.clone(),
                 loc: tile.loc,
             });
-            effects.push(WMEffect::SetWindowSize {
+            effects.push(BackendEffect::SetWindowSize {
                 window: win.clone(),
                 size: tile.size,
             });
@@ -165,12 +171,12 @@ impl WMEngine {
         }
         None
     }
-    pub fn normal_state_under_cursor(&mut self, effects: &mut Vec<WMEffect>) {
+    pub fn normal_state_under_cursor(&mut self, effects: &mut Vec<BackendEffect>) {
         let under = self.window_at(self.last_pointer_pos);
         self.rebound.reset();
         self.state = WMState::Normal {
             active_window: under.clone(),
         };
-        effects.push(WMEffect::SetFocus(under));
+        effects.push(BackendEffect::SetFocus(under));
     }
 }

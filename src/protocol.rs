@@ -5,22 +5,7 @@ use smithay::{
 };
 use std::time::Instant;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Edge {
-    Top,
-    Bottom,
-    Left,
-    Right,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ActionButton {
-    Minimize,
-    Maximize,
-    Close,
-}
-
-pub enum WMEvent {
+pub enum BackendEvent {
     ScreenResized(Size<i32, Logical>),
     WindowCreated(WindowElement),
     WindowDestroyed(WindowElement),
@@ -42,7 +27,7 @@ pub enum WMEvent {
 }
 
 #[derive(Debug)]
-pub enum WMEffect {
+pub enum BackendEffect {
     MapWindow {
         window: WindowElement,
         loc: Point<i32, Logical>,
@@ -58,18 +43,18 @@ pub enum WMEffect {
 }
 
 pub struct EventResult {
-    pub effects: Vec<WMEffect>,
+    pub effects: Vec<BackendEffect>,
     pub consumed: bool,
 }
 
 impl EventResult {
-    pub fn consumed(effects: Vec<WMEffect>) -> Self {
+    pub fn consumed(effects: Vec<BackendEffect>) -> Self {
         Self {
             effects,
             consumed: true,
         }
     }
-    pub fn forwarded(effects: Vec<WMEffect>) -> Self {
+    pub fn forwarded(effects: Vec<BackendEffect>) -> Self {
         Self {
             effects,
             consumed: false,

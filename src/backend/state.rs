@@ -117,9 +117,12 @@ use smithay::{
 
 #[cfg(feature = "xwayland")]
 use crate::backend::cursor::Cursor;
-use crate::backend::{
-    focus::{KeyboardFocusTarget, PointerFocusTarget},
-    shell::WindowElement,
+use crate::{
+    backend::{
+        focus::{KeyboardFocusTarget, PointerFocusTarget},
+        shell::WindowElement,
+    },
+    protocol::{BackendEffect, BackendEvent},
 };
 #[cfg(feature = "xwayland")]
 use smithay::{
@@ -210,7 +213,7 @@ pub struct DndIcon {
 }
 
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
-    pub fn dispatch_wm(&mut self, event: crate::wm::events::WMEvent) -> bool {
+    pub fn dispatch_wm(&mut self, event: BackendEvent) -> bool {
         let result = self.wm.handle_event(event);
         for effect in result.effects {
             self.apply_effect(effect);
@@ -218,16 +221,15 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         result.consumed
     }
 
-    fn apply_effect(&mut self, effect: crate::wm::events::WMEffect) {
-        use crate::wm::events::WMEffect;
+    fn apply_effect(&mut self, effect: BackendEffect) {
         match effect {
-            WMEffect::MapWindow { window, loc } => {
+            BackendEffect::MapWindow { window, loc } => {
                 self.space.map_element(window, loc, false);
             }
-            WMEffect::UnmapWindow(window) => {
+            BackendEffect::UnmapWindow(window) => {
                 self.space.unmap_elem(&window);
             }
-            WMEffect::SetWindowSize { window, size } => {
+            BackendEffect::SetWindowSize { window, size } => {
                 if let Some(toplevel) = window.0.toplevel() {
                     toplevel.with_pending_state(|state| {
                         state.size = Some(size);
@@ -242,12 +244,12 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     let _ = xsurface.configure(smithay::utils::Rectangle::new(loc, size));
                 }
             }
-            WMEffect::SetFocus(target) => {
+            BackendEffect::SetFocus(target) => {
                 let keyboard = self.seat.get_keyboard().unwrap();
                 let serial = smithay::utils::SERIAL_COUNTER.next_serial();
                 keyboard.set_focus(self, target.map(Into::into), serial);
             }
-            WMEffect::CloseWindow(window) => {
+            BackendEffect::CloseWindow(window) => {
                 if let Some(toplevel) = window.0.toplevel() {
                     toplevel.send_close();
                 }
@@ -256,7 +258,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     let _ = xsurface.close();
                 }
             }
-            WMEffect::Spawn(cmd) => {
+            BackendEffect::Spawn(cmd) => {
                 let mut command = std::process::Command::new(&cmd);
 
                 if let Some(socket) = &self.socket_name {

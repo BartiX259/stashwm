@@ -1,5 +1,7 @@
-use super::events::*;
 use super::layout::*;
+use super::rebound::Edge;
+use crate::protocol::*;
+use crate::wm::ActionButton;
 use crate::wm::StashArea;
 use crate::wm::WMEngine;
 use crate::wm::WMState;
@@ -10,7 +12,7 @@ impl WMEngine {
         &mut self,
         pos: Point<i32, Logical>,
         time: std::time::Instant,
-        effects: &mut Vec<WMEffect>,
+        effects: &mut Vec<BackendEffect>,
     ) -> EventResult {
         let under = self.window_at(pos);
         match &mut self.state {
@@ -26,7 +28,7 @@ impl WMEngine {
                             self.state = WMState::StashOpened {
                                 mouse_area: StashArea::Outside,
                             };
-                            effects.push(WMEffect::SetFocus(None));
+                            effects.push(BackendEffect::SetFocus(None));
                             return EventResult::consumed(std::mem::take(effects));
                         }
                         Edge::Left | Edge::Right => {
@@ -36,7 +38,7 @@ impl WMEngine {
                                     hovered_window: None,
                                     hovered_button: None,
                                 };
-                                effects.push(WMEffect::SetFocus(None));
+                                effects.push(BackendEffect::SetFocus(None));
                                 return EventResult::consumed(std::mem::take(effects));
                             }
                         }
@@ -121,7 +123,7 @@ impl WMEngine {
         pressed: bool,
         _pos: Point<i32, Logical>,
         _time: std::time::Instant,
-        effects: &mut Vec<WMEffect>,
+        effects: &mut Vec<BackendEffect>,
     ) -> EventResult {
         if !pressed {
             return EventResult::forwarded(std::mem::take(effects));
@@ -148,18 +150,18 @@ impl WMEngine {
                         match btn {
                             ActionButton::Close => {
                                 self.visible_windows.retain(|w| w != &window);
-                                effects.push(WMEffect::CloseWindow(window));
+                                effects.push(BackendEffect::CloseWindow(window));
                                 self.recompute_layout(effects);
                             }
                             ActionButton::Minimize => {
                                 self.visible_windows.retain(|w| w != &window);
                                 self.stashed_windows.push(window.clone());
                                 let size = Size::new(PREVIEW_SIZE.0 * 2, PREVIEW_SIZE.1 * 2);
-                                effects.push(WMEffect::SetWindowSize {
+                                effects.push(BackendEffect::SetWindowSize {
                                     window: window.clone(),
                                     size,
                                 });
-                                effects.push(WMEffect::UnmapWindow(window));
+                                effects.push(BackendEffect::UnmapWindow(window));
                                 self.recompute_layout(effects);
                             }
                             ActionButton::Maximize => {
@@ -169,12 +171,12 @@ impl WMEngine {
                                     .filter(|w| w != &window)
                                     .collect();
                                 for other in others {
-                                    effects.push(WMEffect::UnmapWindow(other.clone()));
+                                    effects.push(BackendEffect::UnmapWindow(other.clone()));
                                     self.stashed_windows.push(other);
                                 }
                                 self.visible_windows = vec![window.clone()];
                                 self.recompute_layout(effects);
-                                effects.push(WMEffect::SetFocus(Some(window)));
+                                effects.push(BackendEffect::SetFocus(Some(window)));
                             }
                         }
                     } else if let Some(target) = hovered_window {
@@ -196,14 +198,14 @@ impl WMEngine {
                             self.stashed_windows.retain(|w| w != &win);
                             self.visible_windows.push(win.clone());
                             self.recompute_layout(effects);
-                            effects.push(WMEffect::SetFocus(Some(win)));
+                            effects.push(BackendEffect::SetFocus(Some(win)));
                             if self.stashed_windows.is_empty() {
                                 self.normal_state_under_cursor(effects);
                             }
                         }
                         StashArea::PreviewClose(win) => {
                             self.stashed_windows.retain(|w| w != &win);
-                            effects.push(WMEffect::CloseWindow(win));
+                            effects.push(BackendEffect::CloseWindow(win));
                             if self.stashed_windows.is_empty() {
                                 self.normal_state_under_cursor(effects);
                             }
@@ -217,7 +219,7 @@ impl WMEngine {
                         StashArea::CloseAll => {
                             let all = std::mem::take(&mut self.stashed_windows);
                             for w in all {
-                                effects.push(WMEffect::CloseWindow(w));
+                                effects.push(BackendEffect::CloseWindow(w));
                             }
                             self.normal_state_under_cursor(effects);
                         }
