@@ -130,10 +130,10 @@ impl WMEngine {
                         let preview_elements = constrain_space_element(
                             renderer,
                             win,
-                            preview.main_rect.loc,
+                            preview.preview_rect.loc,
                             1.0,
                             scale.x,
-                            preview.main_rect,
+                            preview.preview_rect,
                             constrain_behavior,
                         );
                         elements.extend(preview_elements.map(OutputRenderElements::Preview));
@@ -143,7 +143,9 @@ impl WMEngine {
                 // Preview outlines and backgrounds
                 for (i, win) in self.stashed_windows.iter().enumerate() {
                     if let Some(preview) = layout.previews.get(i) {
-                        if *mouse_area == StashArea::Preview(win.clone()) {
+                        if *mouse_area == StashArea::Preview(win.clone())
+                            || *mouse_area == StashArea::PreviewClose(win.clone())
+                        {
                             push_outline_rect(
                                 elements,
                                 preview.main_rect,

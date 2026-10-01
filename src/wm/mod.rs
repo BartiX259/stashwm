@@ -157,7 +157,10 @@ impl WMEngine {
     pub fn minimize_window(&mut self, window: WindowElement, effects: &mut Vec<BackendEffect>) {
         self.visible_windows.retain(|w| w != &window);
         self.stashed_windows.push(window.clone());
-        let size = Size::new(PREVIEW_SIZE.0 * 2, PREVIEW_SIZE.1 * 2);
+        let stash_layout = calculate_stash_layout(self.screen_size, self.stashed_windows.len());
+        let mut size = stash_layout.previews.last().unwrap().preview_rect.size;
+        size.w *= 2;
+        size.h *= 2;
         effects.push(BackendEffect::SetWindowSize {
             window: window.clone(),
             size,

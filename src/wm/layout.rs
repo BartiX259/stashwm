@@ -90,6 +90,7 @@ pub fn get_action_buttons(
 
 pub struct StashPreview {
     pub main_rect: Rectangle<i32, Logical>,
+    pub preview_rect: Rectangle<i32, Logical>,
     pub close_button: Rectangle<i32, Logical>,
 }
 
@@ -130,8 +131,16 @@ pub fn calculate_stash_layout(screen: Size<i32, Logical>, count: usize) -> Stash
             Point::new(card_x + preview_size.w - close_size.w - 6, card_y + 6),
             close_size,
         );
+        let padding = 8;
+        let padding_top = 30;
+        let mut preview_rect = main_rect;
+        preview_rect.loc.x += padding;
+        preview_rect.loc.y += padding_top;
+        preview_rect.size.w -= padding * 2;
+        preview_rect.size.h -= padding + padding_top;
         previews.push(StashPreview {
             main_rect,
+            preview_rect,
             close_button,
         });
     }
