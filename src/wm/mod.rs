@@ -81,7 +81,7 @@ impl WMEngine {
                 self.visible_windows.push(window.clone());
                 self.recompute_layout(&mut effects);
                 if let WMState::Normal { .. } = self.state {
-                    self.normal_state_under_cursor(&mut effects);
+                    self.move_cursor_to_window(window, &mut effects);
                 }
                 EventResult::forwarded(effects)
             }
@@ -244,6 +244,37 @@ impl WMEngine {
         effects.push(BackendEffect::Spawn(command));
     }
 
+    pub fn window_at(&self, pos: Point<i32, Logical>) -> Option<WindowElement> {
+        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len(), 10);
+        for (win, tile) in self.visible_windows.iter().zip(tiles.into_iter()) {
+            let rect = Rectangle::new(tile.loc, tile.size);
+            if rect.contains(pos) {
+                return Some(win.clone());
+            }
+        }
+        None
+    }
+    pub fn normal_state_under_cursor(&mut self, effects: &mut Vec<BackendEffect>) {
+        let under = self.window_at(self.last_pointer_pos);
+        self.rebound.reset();
+        self.state = WMState::Normal {
+            active_window: under.clone(),
+        };
+        effects.push(BackendEffect::SetFocus(under));
+    }
+    pub fn move_cursor_to_window(
+        &mut self,
+        window: WindowElement,
+        effects: &mut Vec<BackendEffect>,
+    ) {
+        if let Some(rect) = self.get_window_geometry(&window) {
+            let center = Point::new(rect.loc.x + rect.size.w / 2, rect.loc.y + rect.size.h / 2);
+            self.last_pointer_pos = center;
+            self.rebound.reset();
+            effects.push(BackendEffect::SetPointerLocation(center));
+        }
+    }
+
     fn get_current_window(&self) -> Option<WindowElement> {
         match &self.state {
             WMState::Normal { active_window } => active_window.clone(),
@@ -292,24 +323,5 @@ impl WMEngine {
         let tiles = master_slave_layout(self.screen_size, self.visible_windows.len(), 10);
         let tile = tiles.get(idx)?;
         Some(Rectangle::new(tile.loc, tile.size))
-    }
-
-    pub fn window_at(&self, pos: Point<i32, Logical>) -> Option<WindowElement> {
-        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len(), 10);
-        for (win, tile) in self.visible_windows.iter().zip(tiles.into_iter()) {
-            let rect = Rectangle::new(tile.loc, tile.size);
-            if rect.contains(pos) {
-                return Some(win.clone());
-            }
-        }
-        None
-    }
-    pub fn normal_state_under_cursor(&mut self, effects: &mut Vec<BackendEffect>) {
-        let under = self.window_at(self.last_pointer_pos);
-        self.rebound.reset();
-        self.state = WMState::Normal {
-            active_window: under.clone(),
-        };
-        effects.push(BackendEffect::SetFocus(under));
     }
 }

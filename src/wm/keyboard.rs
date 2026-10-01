@@ -36,15 +36,10 @@ impl WMEngine {
     }
     pub fn handle_tap(&mut self, keysym: Keysym, effects: &mut Vec<BackendEffect>) -> EventResult {
         tracing::info!("tap {:?}", keysym);
-        match &self.state {
-            WMState::Normal { .. } => {
-                if keysym == Keysym::Super_L {
-                    self.spawn_command("alacritty".to_string(), effects);
-                } else {
-                    return EventResult::empty_forwarded();
-                }
-            }
-            _ => (),
+        if keysym == Keysym::Super_L {
+            self.toggle_stash(effects);
+        } else {
+            return EventResult::empty_forwarded();
         }
         EventResult::consumed(std::mem::take(effects))
     }

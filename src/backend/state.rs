@@ -233,6 +233,11 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 if let Some(toplevel) = window.0.toplevel() {
                     toplevel.with_pending_state(|state| {
                         state.size = Some(size);
+                    use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
+                    state.states.set(State::TiledTop);
+                    state.states.set(State::TiledBottom);
+                    state.states.set(State::TiledLeft);
+                    state.states.set(State::TiledRight);
                     });
                     if toplevel.is_initial_configure_sent() {
                         toplevel.send_pending_configure();
@@ -273,6 +278,11 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 if let Err(err) = command.spawn() {
                     tracing::error!(?cmd, ?err, "Failed to spawn command");
                 }
+            }
+            BackendEffect::SetPointerLocation(pos) => {
+                let f64_pos = pos.to_f64();
+                self.pointer.set_location(f64_pos);
+                self.handle_pointer_motion(f64_pos, smithay::backend::input::InputTime::now());
             }
         }
     }

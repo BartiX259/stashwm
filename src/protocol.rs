@@ -40,6 +40,7 @@ pub enum BackendEffect {
     SetFocus(Option<WindowElement>),
     CloseWindow(WindowElement),
     Spawn(String),
+    SetPointerLocation(Point<i32, Logical>),
 }
 
 pub struct EventResult {
