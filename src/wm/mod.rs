@@ -245,7 +245,7 @@ impl WMEngine {
     }
 
     pub fn window_at(&self, pos: Point<i32, Logical>) -> Option<WindowElement> {
-        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len(), 10);
+        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len());
         for (win, tile) in self.visible_windows.iter().zip(tiles.into_iter()) {
             let rect = Rectangle::new(tile.loc, tile.size);
             if rect.contains(pos) {
@@ -284,7 +284,7 @@ impl WMEngine {
     }
 
     fn recompute_layout(&self, effects: &mut Vec<BackendEffect>) {
-        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len(), 10);
+        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len());
         for (win, tile) in self.visible_windows.iter().zip(tiles.into_iter()) {
             effects.push(BackendEffect::MapWindow {
                 window: win.clone(),
@@ -304,7 +304,7 @@ impl WMEngine {
         if edge == Edge::Left || self.visible_windows.len() == 1 {
             return self.visible_windows.first().cloned();
         }
-        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len(), 10);
+        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len());
         for (win, tile) in self
             .visible_windows
             .iter()
@@ -320,7 +320,7 @@ impl WMEngine {
 
     fn get_window_geometry(&self, window: &WindowElement) -> Option<Rectangle<i32, Logical>> {
         let idx = self.visible_windows.iter().position(|w| w == window)?;
-        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len(), 10);
+        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len());
         let tile = tiles.get(idx)?;
         Some(Rectangle::new(tile.loc, tile.size))
     }

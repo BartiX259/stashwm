@@ -1,4 +1,4 @@
-use super::{ActionButton, StashArea, WMState, WMEngine, layout::*};
+use super::{ActionButton, StashArea, WMEngine, WMState, layout::*};
 use crate::backend::render::{CustomRenderElements, OutputRenderElements};
 use crate::backend::shell::WindowRenderElement;
 use smithay::{
@@ -29,7 +29,19 @@ impl WMEngine {
         let scale = Scale::from(output.current_scale().fractional_scale());
 
         match &self.state {
-            WMState::Normal { .. } => {}
+            WMState::Normal { active_window } => {
+                if let Some(window) = active_window {
+                    if let Some(win_rect) = self.get_window_geometry(window) {
+                        push_outline_rect(
+                            elements,
+                            win_rect,
+                            scale,
+                            OUTLINE_WIDTH,
+                            [0.1, 0.9, 0.9, 1.0],
+                        );
+                    }
+                }
+            }
             WMState::WindowSelected {
                 window,
                 hovered_window,
@@ -64,6 +76,15 @@ impl WMEngine {
                         };
                         push_solid_rect(elements, rect, scale, color);
                     }
+                    // if hovered_window.is_none() {
+                    //     push_outline_rect(
+                    //         elements,
+                    //         win_rect,
+                    //         scale,
+                    //         OUTLINE_WIDTH,
+                    //         [0.2, 0.8, 0.5, 0.9],
+                    //     );
+                    // }
 
                     // Semi-transparent overlay
                     push_solid_rect(elements, win_rect, scale, [0.05, 0.06, 0.08, 0.8]);
@@ -72,7 +93,13 @@ impl WMEngine {
                 // Hover outline
                 if let Some(target) = hovered_window {
                     if let Some(target_rect) = self.get_window_geometry(target) {
-                        push_outline_rect(elements, target_rect, scale, 3, [0.2, 0.8, 0.5, 0.9]);
+                        push_outline_rect(
+                            elements,
+                            target_rect,
+                            scale,
+                            OUTLINE_WIDTH,
+                            [0.2, 0.8, 0.5, 0.9],
+                        );
                     }
                 }
             }
@@ -148,6 +175,9 @@ impl WMEngine {
                 push_solid_rect(elements, layout.main_rect, scale, [0.06, 0.07, 0.1, 0.95]);
             }
         }
+        for rect in master_slave_layout(self.screen_size, self.visible_windows.len()) {
+            push_outline_rect(elements, rect, scale, OUTLINE_WIDTH, [0.4, 0.4, 0.4, 1.0]);
+        }
     }
 }
 
@@ -178,7 +208,7 @@ fn push_solid_rect<R>(
 
 fn push_outline_rect<R>(
     elements: &mut Vec<OutputRenderElements<R, WindowRenderElement<R>>>,
-    rect: Rectangle<i32, Logical>,
+    mut rect: Rectangle<i32, Logical>,
     scale: Scale<f64>,
     thickness: i32,
     color: [f32; 4],
@@ -186,16 +216,22 @@ fn push_outline_rect<R>(
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Clone + 'static,
 {
+    rect.loc.x -= thickness;
+    rect.loc.y -= thickness;
+    rect.size.w += thickness * 2;
+    rect.size.h += thickness * 2;
+    let side_h = rect.size.h - thickness * 2;
+    let side_y = rect.loc.y + thickness;
     let borders = [
         Rectangle::new(rect.loc, Size::new(rect.size.w, thickness)),
         Rectangle::new(
             Point::new(rect.loc.x, rect.loc.y + rect.size.h - thickness),
             Size::new(rect.size.w, thickness),
         ),
-        Rectangle::new(rect.loc, Size::new(thickness, rect.size.h)),
+        Rectangle::new(Point::new(rect.loc.x, side_y), Size::new(thickness, side_h)),
         Rectangle::new(
-            Point::new(rect.loc.x + rect.size.w - thickness, rect.loc.y),
-            Size::new(thickness, rect.size.h),
+            Point::new(rect.loc.x + rect.size.w - thickness, side_y),
+            Size::new(thickness, side_h),
         ),
     ];
     for b in borders {

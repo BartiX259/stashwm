@@ -2,56 +2,58 @@ use super::ActionButton;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
 pub const PREVIEW_SIZE: (i32, i32) = (300, 200);
+pub const OUTLINE_WIDTH: i32 = 4;
 
 /// Master on the left, vertical stack on the right
 pub fn master_slave_layout(
     screen: Size<i32, Logical>,
     count: usize,
-    gap: i32,
 ) -> Vec<Rectangle<i32, Logical>> {
     if count == 0 {
         return Vec::new();
     }
+    let outer_gap = 8 + OUTLINE_WIDTH;
+    let mut inner_gap = 0;
+    inner_gap = if inner_gap == 0 {
+        OUTLINE_WIDTH
+    } else {
+        inner_gap + OUTLINE_WIDTH * 2
+    };
     if count == 1 {
         return vec![Rectangle::new(
-            Point::from((gap, gap)),
-            Size::from((screen.w - gap * 2, screen.h - gap * 2)),
+            Point::from((outer_gap, outer_gap)),
+            Size::from((screen.w - outer_gap * 2, screen.h - outer_gap * 2)),
         )];
     }
 
     let mut result = Vec::with_capacity(count);
 
-    let master_w = (screen.w - gap * 3) / 2;
-    let stack_x = gap * 2 + master_w;
-    let stack_w = screen.w - stack_x - gap;
+    let master_w = (screen.w - outer_gap * 2 - inner_gap) / 2;
+    let stack_x = outer_gap + inner_gap + master_w;
+    let stack_w = screen.w - stack_x - outer_gap;
 
     // Master (Window 0)
     result.push(Rectangle::new(
-        Point::from((gap, gap)),
-        Size::from((master_w, screen.h - gap * 2)),
+        Point::from((outer_gap, outer_gap)),
+        Size::from((master_w, screen.h - outer_gap * 2)),
     ));
 
     // Slaves (Windows 1..N)
     let slave_count = (count - 1) as i32;
-    let total_gaps = (slave_count - 1) * gap;
-    let usable_h = screen.h - gap * 2 - total_gaps;
+    let usable_h = screen.h - outer_gap * 2 - (slave_count - 1) * inner_gap;
     let base_h = usable_h / slave_count;
     let mut remainder = usable_h % slave_count;
-    let mut current_y = gap;
+    let mut current_y = outer_gap;
 
     for _ in 0..slave_count {
-        let extra = if remainder > 0 {
-            remainder -= 1;
-            1
-        } else {
-            0
-        };
+        let extra = if remainder > 0 { 1 } else { 0 };
+        remainder -= extra;
         let h = base_h + extra;
         result.push(Rectangle::new(
             Point::from((stack_x, current_y)),
             Size::from((stack_w, h)),
         ));
-        current_y += h + gap;
+        current_y += h + inner_gap;
     }
 
     result
