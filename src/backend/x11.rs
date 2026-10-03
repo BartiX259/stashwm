@@ -425,7 +425,7 @@ pub fn run_x11() {
                 &mut fb,
                 &mut backend_data.damage_tracker,
                 age.into(),
-                &state.wm,
+                &mut state.wm,
             );
 
             match render_res {

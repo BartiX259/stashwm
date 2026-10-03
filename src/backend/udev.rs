@@ -1577,7 +1577,7 @@ impl AnvilState<UdevData> {
             &mut self.backend_data.pointer_element,
             &self.dnd_icon,
             &mut self.cursor_status,
-            &self.wm,
+            &mut self.wm,
         );
         let reschedule = match result {
             Ok((has_rendered, states)) => {
@@ -1660,7 +1660,7 @@ fn render_surface<'a>(
     pointer_element: &mut PointerElement,
     dnd_icon: &Option<DndIcon>,
     cursor_status: &mut CursorImageStatus,
-    wm: &crate::wm::WMEngine,
+    wm: &mut crate::wm::WMEngine,
 ) -> Result<(bool, RenderElementStates), SwapBuffersError> {
     let output_geometry = space.output_geometry(output).unwrap();
     let scale = Scale::from(output.current_scale().fractional_scale());

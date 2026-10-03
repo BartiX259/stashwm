@@ -1,6 +1,9 @@
 use super::{ActionButton, StashArea, WMEngine, WMState, layout::*};
 use crate::backend::render::{CustomRenderElements, OutputRenderElements};
-use crate::backend::shell::WindowRenderElement;
+use crate::backend::shell::{WindowElement, WindowRenderElement};
+use smithay::backend::renderer::element::memory::{
+    MemoryRenderBuffer, MemoryRenderBufferRenderElement,
+};
 use smithay::{
     backend::renderer::{
         Color32F, ImportAll, ImportMem, Renderer,
@@ -18,13 +21,13 @@ use smithay::{
 
 impl WMEngine {
     pub fn render_overlays<R>(
-        &self,
+        &mut self,
         renderer: &mut R,
         output: &Output,
         elements: &mut Vec<OutputRenderElements<R, WindowRenderElement<R>>>,
     ) where
         R: Renderer + ImportAll + ImportMem,
-        R::TextureId: Clone + 'static,
+        R::TextureId: Clone + Send + 'static,
     {
         let scale = Scale::from(output.current_scale().fractional_scale());
 
@@ -119,6 +122,19 @@ impl WMEngine {
                     }
                 }
 
+                // Titles above previewAs
+                for (i, win) in self.stashed_windows.iter().enumerate() {
+                    if let Some(preview) = layout.previews.get(i) {
+                        let title = get_window_title(win);
+                        let title_pos =
+                            Point::new(preview.main_rect.loc.x + 10, preview.main_rect.loc.y + 6);
+                        let text_buffer =
+                            self.text_renderer
+                                .render_text(&title, 12.0, [0.9, 0.9, 0.95, 1.0]);
+                        push_memory_buffer(elements, renderer, &text_buffer, title_pos, scale);
+                    }
+                }
+
                 // Window previews
                 let constrain_behavior = ConstrainBehavior {
                     reference: ConstrainReference::Geometry,
@@ -159,19 +175,41 @@ impl WMEngine {
                 }
 
                 // Restore/close all
-                let restore_col = if *mouse_area == StashArea::RestoreAll {
+                let restore_all_text =
+                    self.text_renderer
+                        .render_text("Restore All", 12.0, [1.0, 1.0, 1.0, 1.0]);
+                push_memory_buffer(
+                    elements,
+                    renderer,
+                    &restore_all_text,
+                    Point::new(layout.restore_all.loc.x + 12, layout.restore_all.loc.y + 6),
+                    scale,
+                );
+
+                let close_all_text =
+                    self.text_renderer
+                        .render_text("Close All", 12.0, [1.0, 1.0, 1.0, 1.0]);
+                push_memory_buffer(
+                    elements,
+                    renderer,
+                    &close_all_text,
+                    Point::new(layout.close_all.loc.x + 16, layout.close_all.loc.y + 6),
+                    scale,
+                );
+
+                let restore_color = if *mouse_area == StashArea::RestoreAll {
                     [0.2, 0.8, 0.4, 1.0]
                 } else {
                     [0.15, 0.5, 0.3, 0.9]
                 };
-                push_solid_rect(elements, layout.restore_all, scale, restore_col);
+                push_solid_rect(elements, layout.restore_all, scale, restore_color);
 
-                let close_col = if *mouse_area == StashArea::CloseAll {
+                let close_color = if *mouse_area == StashArea::CloseAll {
                     [1.0, 0.3, 0.3, 1.0]
                 } else {
                     [0.7, 0.2, 0.2, 0.9]
                 };
-                push_solid_rect(elements, layout.close_all, scale, close_col);
+                push_solid_rect(elements, layout.close_all, scale, close_color);
 
                 // Background
                 push_solid_rect(elements, layout.main_rect, scale, [0.06, 0.07, 0.1, 0.95]);
@@ -239,4 +277,47 @@ fn push_outline_rect<R>(
     for b in borders {
         push_solid_rect(elements, b, scale, color);
     }
+}
+
+fn push_memory_buffer<R>(
+    elements: &mut Vec<OutputRenderElements<R, WindowRenderElement<R>>>,
+    renderer: &mut R,
+    buffer: &MemoryRenderBuffer,
+    location: Point<i32, Logical>,
+    scale: Scale<f64>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Clone + Send + 'static,
+{
+    let elem = MemoryRenderBufferRenderElement::from_buffer(
+        renderer,
+        location.to_f64().to_physical(scale),
+        buffer,
+        None,
+        None,
+        None,
+        Kind::Unspecified,
+    )
+    .unwrap();
+
+    elements.push(OutputRenderElements::Custom(CustomRenderElements::Memory(
+        elem,
+    )));
+}
+
+fn get_window_title(window: &WindowElement) -> String {
+    if let Some(surface) = window.wl_surface() {
+        let title = smithay::wayland::compositor::with_states(&surface, |states| {
+            states
+                .data_map
+                .get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>()
+                .and_then(|data| data.lock().unwrap().title.clone())
+        });
+        if let Some(t) = title {
+            if !t.is_empty() {
+                return t;
+            }
+        }
+    }
+    "Window".to_string()
 }

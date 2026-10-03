@@ -382,7 +382,7 @@ pub fn run_winit() {
                     &mut fb,
                     damage_tracker,
                     age,
-                    &state.wm,
+                    &mut state.wm,
                 )
                 .map_err(|err| match err {
                     OutputDamageTrackerError::Rendering(err) => err.into(),

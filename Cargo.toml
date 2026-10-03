@@ -20,6 +20,7 @@ puffin_http = { version = "0.13", optional = true }
 profiling = { version = "1.0" }
 
 smithay-drm-extras = { git = "https://github.com/Smithay/smithay", rev = "79bbed5e1199090d787115614847a79c76607181", optional = true }
+fontdue = "0.9.4"
 
 [dependencies.smithay]
 git = "https://github.com/Smithay/smithay"

@@ -4,6 +4,7 @@ use smithay::{
         damage::{Error as OutputDamageTrackerError, OutputDamageTracker, RenderOutputResult},
         element::{
             AsRenderElements, RenderElement, Wrap,
+            memory::MemoryRenderBufferRenderElement,
             solid::SolidColorRenderElement,
             surface::WaylandSurfaceRenderElement,
             utils::{
@@ -32,6 +33,7 @@ smithay::backend::renderer::element::render_elements! {
     Pointer=PointerRenderElement<R>,
     Surface=WaylandSurfaceRenderElement<R>,
     Solid=SolidColorRenderElement,
+    Memory=MemoryRenderBufferRenderElement<R>,
     #[cfg(feature = "debug")]
     // Note: We would like to borrow this element instead, but that would introduce
     // a feature-dependent lifetime, which introduces a lot more feature bounds
@@ -46,6 +48,7 @@ impl<R: Renderer> std::fmt::Debug for CustomRenderElements<R> {
             Self::Pointer(arg0) => f.debug_tuple("Pointer").field(arg0).finish(),
             Self::Surface(arg0) => f.debug_tuple("Surface").field(arg0).finish(),
             Self::Solid(arg0) => f.debug_tuple("Solid").field(arg0).finish(),
+            Self::Memory(arg0) => f.debug_tuple("Memory").field(arg0).finish(),
             #[cfg(feature = "debug")]
             Self::Fps(arg0) => f.debug_tuple("Fps").field(arg0).finish(),
             Self::_GenericCatcher(arg0) => f.debug_tuple("_GenericCatcher").field(arg0).finish(),
@@ -145,14 +148,14 @@ pub fn output_elements<R>(
     space: &Space<WindowElement>,
     custom_elements: impl IntoIterator<Item = CustomRenderElements<R>>,
     renderer: &mut R,
-    wm: &crate::wm::WMEngine,
+    wm: &mut crate::wm::WMEngine,
 ) -> (
     Vec<OutputRenderElements<R, WindowRenderElement<R>>>,
     Color32F,
 )
 where
     R: Renderer + ImportAll + ImportMem,
-    R::TextureId: Clone + 'static,
+    R::TextureId: Clone + Send + 'static,
 {
     if let Some(window) = output
         .user_data()
@@ -203,11 +206,11 @@ pub fn render_output<'a, 'd, R>(
     framebuffer: &'a mut R::Framebuffer<'_>,
     damage_tracker: &'d mut OutputDamageTracker,
     age: usize,
-    wm: &crate::wm::WMEngine,
+    wm: &mut crate::wm::WMEngine,
 ) -> Result<RenderOutputResult<'d>, OutputDamageTrackerError<R::Error>>
 where
     R: Renderer + ImportAll + ImportMem,
-    R::TextureId: Clone + 'static,
+    R::TextureId: Clone + Send + 'static,
 {
     let (elements, clear_color) = output_elements(output, space, custom_elements, renderer, wm);
     damage_tracker.render_output(renderer, framebuffer, age, &elements, clear_color)

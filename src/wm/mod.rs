@@ -4,9 +4,11 @@ pub mod layout;
 pub mod mouse;
 pub mod rebound;
 pub mod render;
+pub mod text;
 
 use crate::protocol::*;
 use crate::wm::actions::WMAction;
+use crate::wm::text::TextRenderer;
 use crate::{backend::shell::WindowElement, wm::rebound::Edge};
 use layout::*;
 use rebound::Rebound;
@@ -50,6 +52,7 @@ pub struct WMEngine {
     pub visible_windows: Vec<WindowElement>,
     pub stashed_windows: Vec<WindowElement>,
     pub state: WMState,
+    pub text_renderer: TextRenderer,
     rebound: Rebound,
     last_pointer_pos: Point<i32, Logical>,
 }
@@ -63,6 +66,7 @@ impl WMEngine {
             state: WMState::Normal {
                 active_window: None,
             },
+            text_renderer: TextRenderer::new(),
             rebound: Rebound::new(),
             last_pointer_pos: Point::new(0, 0),
         }
