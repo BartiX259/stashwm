@@ -1,6 +1,7 @@
 use super::{ActionButton, StashArea, WMEngine, WMState, layout::*};
 use crate::backend::render::{CustomRenderElements, OutputRenderElements};
 use crate::backend::shell::{WindowElement, WindowRenderElement};
+use crate::wm::svg::Icon;
 use smithay::backend::renderer::element::memory::{
     MemoryRenderBuffer, MemoryRenderBufferRenderElement,
 };
@@ -54,6 +55,20 @@ impl WMEngine {
                 if let Some(win_rect) = self.get_window_geometry(window) {
                     for (action, rect) in get_action_buttons(win_rect) {
                         let is_hov = *hovered_button == Some(action);
+
+                        let icon = match action {
+                            ActionButton::Close => Icon::Close,
+                            ActionButton::Minimize => Icon::Minimize,
+                            ActionButton::Maximize => Icon::Maximize,
+                        };
+                        let icon_rect = padded(rect, icon_padding(rect));
+                        let icon_buf = self.svg_renderer.render_svg(
+                            icon,
+                            icon_rect.size,
+                            [1.0, 1.0, 1.0, 1.0],
+                        );
+                        push_memory_buffer(elements, renderer, &icon_buf, icon_rect.loc, scale);
+
                         let color = match action {
                             ActionButton::Maximize => {
                                 if is_hov {
@@ -112,6 +127,14 @@ impl WMEngine {
                 // Close buttons
                 for (i, win) in self.stashed_windows.iter().enumerate() {
                     if let Some(preview) = layout.previews.get(i) {
+                        let icon_rect =
+                            padded(preview.close_button, icon_padding(preview.close_button));
+                        let icon_buf = self.svg_renderer.render_svg(
+                            Icon::Close,
+                            icon_rect.size,
+                            [1.0, 1.0, 1.0, 1.0],
+                        );
+                        push_memory_buffer(elements, renderer, &icon_buf, icon_rect.loc, scale);
                         let is_close_hov = *mouse_area == StashArea::PreviewClose(win.clone());
                         let col = if is_close_hov {
                             [1.0, 0.2, 0.2, 1.0]

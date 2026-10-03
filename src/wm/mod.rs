@@ -4,10 +4,12 @@ pub mod layout;
 pub mod mouse;
 pub mod rebound;
 pub mod render;
+pub mod svg;
 pub mod text;
 
 use crate::protocol::*;
 use crate::wm::actions::WMAction;
+use crate::wm::svg::SvgRenderer;
 use crate::wm::text::TextRenderer;
 use crate::{backend::shell::WindowElement, wm::rebound::Edge};
 use layout::*;
@@ -53,6 +55,7 @@ pub struct WMEngine {
     pub stashed_windows: Vec<WindowElement>,
     pub state: WMState,
     pub text_renderer: TextRenderer,
+    pub svg_renderer: SvgRenderer,
     rebound: Rebound,
     last_pointer_pos: Point<i32, Logical>,
 }
@@ -67,6 +70,7 @@ impl WMEngine {
                 active_window: None,
             },
             text_renderer: TextRenderer::new(),
+            svg_renderer: SvgRenderer::new(),
             rebound: Rebound::new(),
             last_pointer_pos: Point::new(0, 0),
         }

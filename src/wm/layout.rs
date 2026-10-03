@@ -4,6 +4,37 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 pub const PREVIEW_SIZE: (i32, i32) = (300, 200);
 pub const OUTLINE_WIDTH: i32 = 4;
 
+pub fn padded(rect: Rectangle<i32, Logical>, pad: i32) -> Rectangle<i32, Logical> {
+    padded_custom(rect, pad, pad, pad, pad)
+}
+
+pub fn padded_custom(
+    rect: Rectangle<i32, Logical>,
+    top: i32,
+    right: i32,
+    bottom: i32,
+    left: i32,
+) -> Rectangle<i32, Logical> {
+    Rectangle::new(
+        Point::new(rect.loc.x + left, rect.loc.y + top),
+        Size::new(
+            (rect.size.w - left - right).max(1),
+            (rect.size.h - top - bottom).max(1),
+        ),
+    )
+}
+
+pub fn icon_padding(rect: Rectangle<i32, Logical>) -> i32 {
+    let min_dim = rect.size.w.min(rect.size.h);
+    if min_dim <= 20 {
+        3
+    } else if min_dim <= 32 {
+        5
+    } else {
+        min_dim * 27 / 100
+    }
+}
+
 /// Master on the left, vertical stack on the right
 pub fn master_slave_layout(
     screen: Size<i32, Logical>,
@@ -20,10 +51,7 @@ pub fn master_slave_layout(
         inner_gap + OUTLINE_WIDTH * 2
     };
     if count == 1 {
-        return vec![Rectangle::new(
-            Point::from((outer_gap, outer_gap)),
-            Size::from((screen.w - outer_gap * 2, screen.h - outer_gap * 2)),
-        )];
+        return vec![padded(Rectangle::from_size(screen), outer_gap)];
     }
 
     let mut result = Vec::with_capacity(count);
@@ -133,11 +161,7 @@ pub fn calculate_stash_layout(screen: Size<i32, Logical>, count: usize) -> Stash
         );
         let padding = 8;
         let padding_top = 30;
-        let mut preview_rect = main_rect;
-        preview_rect.loc.x += padding;
-        preview_rect.loc.y += padding_top;
-        preview_rect.size.w -= padding * 2;
-        preview_rect.size.h -= padding + padding_top;
+        let preview_rect = padded_custom(main_rect, padding_top, padding, padding, padding);
         previews.push(StashPreview {
             main_rect,
             preview_rect,

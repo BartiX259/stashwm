@@ -1,5 +1,3 @@
-// src/wm/text.rs
-
 use fontdue::{Font, FontSettings};
 use smithay::{
     backend::{allocator::Fourcc, renderer::element::memory::MemoryRenderBuffer},
