@@ -55,8 +55,8 @@ pub struct WMEngine {
     pub visible_rects: Vec<Rectangle<i32, Logical>>,
     pub stashed_windows: Vec<WindowElement>,
     pub state: WMState,
-    pub text_renderer: TextRenderer,
-    pub svg_renderer: SvgRenderer,
+    pub text: TextRenderer,
+    pub svg: SvgRenderer,
     rebound: Rebound,
     last_pointer_pos: Point<i32, Logical>,
 }
@@ -71,8 +71,8 @@ impl WMEngine {
             state: WMState::Normal {
                 active_window: None,
             },
-            text_renderer: TextRenderer::new(),
-            svg_renderer: SvgRenderer::new(),
+            text: TextRenderer::new(),
+            svg: SvgRenderer::new(),
             rebound: Rebound::new(),
             last_pointer_pos: Point::new(0, 0),
         }

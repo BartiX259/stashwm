@@ -54,7 +54,7 @@ impl TextRenderer {
         }
     }
 
-    pub fn render_text(&mut self, text: &str, size_pt: f32, color: [f32; 4]) -> MemoryRenderBuffer {
+    pub fn render(&mut self, text: &str, size_pt: f32, color: [f32; 4]) -> MemoryRenderBuffer {
         let Some(font) = &self.font else {
             return self.fallback_empty.clone();
         };

@@ -48,7 +48,7 @@ impl SvgRenderer {
         }
     }
 
-    pub fn render_svg(
+    pub fn render(
         &mut self,
         icon: Icon,
         size: Size<i32, Logical>,

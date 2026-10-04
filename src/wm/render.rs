@@ -62,11 +62,7 @@ impl WMEngine {
                             ActionButton::Maximize => Icon::Maximize,
                         };
                         let icon_rect = padded(rect, icon_padding(rect));
-                        let icon_buf = self.svg_renderer.render_svg(
-                            icon,
-                            icon_rect.size,
-                            [1.0, 1.0, 1.0, 1.0],
-                        );
+                        let icon_buf = self.svg.render(icon, icon_rect.size, [1.0, 1.0, 1.0, 1.0]);
                         push_memory_buffer(elements, renderer, &icon_buf, icon_rect.loc, scale);
 
                         let color = match action {
@@ -129,11 +125,9 @@ impl WMEngine {
                     if let Some(preview) = layout.previews.get(i) {
                         let icon_rect =
                             padded(preview.close_button, icon_padding(preview.close_button));
-                        let icon_buf = self.svg_renderer.render_svg(
-                            Icon::Close,
-                            icon_rect.size,
-                            [1.0, 1.0, 1.0, 1.0],
-                        );
+                        let icon_buf =
+                            self.svg
+                                .render(Icon::Close, icon_rect.size, [1.0, 1.0, 1.0, 1.0]);
                         push_memory_buffer(elements, renderer, &icon_buf, icon_rect.loc, scale);
                         let is_close_hov = *mouse_area == StashArea::PreviewClose(win.clone());
                         let col = if is_close_hov {
@@ -151,9 +145,7 @@ impl WMEngine {
                         let title = get_window_title(win);
                         let title_pos =
                             Point::new(preview.main_rect.loc.x + 10, preview.main_rect.loc.y + 6);
-                        let text_buffer =
-                            self.text_renderer
-                                .render_text(&title, 12.0, [0.9, 0.9, 0.95, 1.0]);
+                        let text_buffer = self.text.render(&title, 12.0, [0.9, 0.9, 0.95, 1.0]);
                         push_memory_buffer(elements, renderer, &text_buffer, title_pos, scale);
                     }
                 }
@@ -198,9 +190,7 @@ impl WMEngine {
                 }
 
                 // Restore/close all
-                let restore_all_text =
-                    self.text_renderer
-                        .render_text("Restore All", 12.0, [1.0, 1.0, 1.0, 1.0]);
+                let restore_all_text = self.text.render("Restore All", 12.0, [1.0, 1.0, 1.0, 1.0]);
                 push_memory_buffer(
                     elements,
                     renderer,
@@ -209,9 +199,7 @@ impl WMEngine {
                     scale,
                 );
 
-                let close_all_text =
-                    self.text_renderer
-                        .render_text("Close All", 12.0, [1.0, 1.0, 1.0, 1.0]);
+                let close_all_text = self.text.render("Close All", 12.0, [1.0, 1.0, 1.0, 1.0]);
                 push_memory_buffer(
                     elements,
                     renderer,
