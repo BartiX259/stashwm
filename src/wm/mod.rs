@@ -52,6 +52,7 @@ pub enum WMState {
 pub struct WMEngine {
     pub screen_size: Size<i32, Logical>,
     pub visible_windows: Vec<WindowElement>,
+    pub visible_rects: Vec<Rectangle<i32, Logical>>,
     pub stashed_windows: Vec<WindowElement>,
     pub state: WMState,
     pub text_renderer: TextRenderer,
@@ -65,6 +66,7 @@ impl WMEngine {
         Self {
             screen_size,
             visible_windows: Vec::new(),
+            visible_rects: Vec::new(),
             stashed_windows: Vec::new(),
             state: WMState::Normal {
                 active_window: None,
@@ -197,11 +199,26 @@ impl WMEngine {
         w2: WindowElement,
         effects: &mut Vec<BackendEffect>,
     ) {
-        let idx1 = self.visible_windows.iter().position(|w| w == &w1);
-        let idx2 = self.visible_windows.iter().position(|w| w == &w2);
-        if let (Some(i1), Some(i2)) = (idx1, idx2) {
+        let i1 = self.visible_windows.iter().position(|w| w == &w1);
+        let i2 = self.visible_windows.iter().position(|w| w == &w2);
+        if let (Some(i1), Some(i2)) = (i1, i2) {
             self.visible_windows.swap(i1, i2);
-            self.recompute_layout(effects);
+            effects.push(BackendEffect::MapWindow {
+                window: self.visible_windows[i1].clone(),
+                loc: self.visible_rects[i1].loc,
+            });
+            effects.push(BackendEffect::SetWindowSize {
+                window: self.visible_windows[i1].clone(),
+                size: self.visible_rects[i1].size,
+            });
+            effects.push(BackendEffect::MapWindow {
+                window: self.visible_windows[i2].clone(),
+                loc: self.visible_rects[i2].loc,
+            });
+            effects.push(BackendEffect::SetWindowSize {
+                window: self.visible_windows[i2].clone(),
+                size: self.visible_rects[i2].size,
+            });
         }
     }
     pub fn restore_stashed(&mut self, window: WindowElement, effects: &mut Vec<BackendEffect>) {
@@ -256,14 +273,11 @@ impl WMEngine {
     }
 
     pub fn window_at(&self, pos: Point<i32, Logical>) -> Option<WindowElement> {
-        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len());
-        for (win, tile) in self.visible_windows.iter().zip(tiles.into_iter()) {
-            let rect = Rectangle::new(tile.loc, tile.size);
-            if rect.contains(pos) {
-                return Some(win.clone());
-            }
-        }
-        None
+        let idx = self
+            .visible_rects
+            .iter()
+            .position(|rect| rect.contains(pos))?;
+        self.visible_windows.get(idx).cloned()
     }
     pub fn normal_state_under_cursor(&mut self, effects: &mut Vec<BackendEffect>) {
         let under = self.window_at(self.last_pointer_pos);
@@ -294,16 +308,16 @@ impl WMEngine {
         }
     }
 
-    fn recompute_layout(&self, effects: &mut Vec<BackendEffect>) {
-        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len());
-        for (win, tile) in self.visible_windows.iter().zip(tiles.into_iter()) {
+    fn recompute_layout(&mut self, effects: &mut Vec<BackendEffect>) {
+        self.visible_rects = master_slave_layout(self.screen_size, self.visible_windows.len());
+        for (win, rect) in self.visible_windows.iter().zip(self.visible_rects.iter()) {
             effects.push(BackendEffect::MapWindow {
                 window: win.clone(),
-                loc: tile.loc,
+                loc: rect.loc,
             });
             effects.push(BackendEffect::SetWindowSize {
                 window: win.clone(),
-                size: tile.size,
+                size: rect.size,
             });
         }
     }
@@ -315,15 +329,9 @@ impl WMEngine {
         if edge == Edge::Left || self.visible_windows.len() == 1 {
             return self.visible_windows.first().cloned();
         }
-        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len());
-        for (win, tile) in self
-            .visible_windows
-            .iter()
-            .skip(1)
-            .zip(tiles.into_iter().skip(1))
-        {
-            if y >= tile.loc.y && y <= tile.loc.y + tile.size.h {
-                return Some(win.clone());
+        for (i, rect) in self.visible_rects.iter().enumerate().skip(1) {
+            if y >= rect.loc.y && y <= rect.loc.y + rect.size.h {
+                return self.visible_windows.get(i).cloned();
             }
         }
         self.visible_windows.last().cloned()
@@ -331,8 +339,6 @@ impl WMEngine {
 
     fn get_window_geometry(&self, window: &WindowElement) -> Option<Rectangle<i32, Logical>> {
         let idx = self.visible_windows.iter().position(|w| w == window)?;
-        let tiles = master_slave_layout(self.screen_size, self.visible_windows.len());
-        let tile = tiles.get(idx)?;
-        Some(Rectangle::new(tile.loc, tile.size))
+        self.visible_rects.get(idx).copied()
     }
 }

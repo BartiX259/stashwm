@@ -238,8 +238,8 @@ impl WMEngine {
                 push_solid_rect(elements, layout.main_rect, scale, [0.06, 0.07, 0.1, 0.95]);
             }
         }
-        for rect in master_slave_layout(self.screen_size, self.visible_windows.len()) {
-            push_outline_rect(elements, rect, scale, OUTLINE_WIDTH, [0.4, 0.4, 0.4, 1.0]);
+        for rect in &self.visible_rects {
+            push_outline_rect(elements, *rect, scale, OUTLINE_WIDTH, [0.4, 0.4, 0.4, 1.0]);
         }
     }
 }
