@@ -94,7 +94,7 @@ impl SvgRenderer {
 
             MemoryRenderBuffer::from_slice(
                 &pixels,
-                Fourcc::Argb8888,
+                Fourcc::Abgr8888,
                 (size.w, size.h),
                 1,
                 Transform::Normal,

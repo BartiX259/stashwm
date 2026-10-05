@@ -3,12 +3,14 @@ pub mod keyboard;
 pub mod layout;
 pub mod mouse;
 pub mod rebound;
+pub mod rect;
 pub mod render;
 pub mod svg;
 pub mod text;
 
 use crate::protocol::*;
 use crate::wm::actions::WMAction;
+use crate::wm::rect::RectRenderer;
 use crate::wm::svg::SvgRenderer;
 use crate::wm::text::TextRenderer;
 use crate::{backend::shell::WindowElement, wm::rebound::Edge};
@@ -57,6 +59,7 @@ pub struct WMEngine {
     pub state: WMState,
     pub text: TextRenderer,
     pub svg: SvgRenderer,
+    pub rect: RectRenderer,
     rebound: Rebound,
     last_pointer_pos: Point<i32, Logical>,
 }
@@ -73,6 +76,7 @@ impl WMEngine {
             },
             text: TextRenderer::new(),
             svg: SvgRenderer::new(),
+            rect: RectRenderer::new(),
             rebound: Rebound::new(),
             last_pointer_pos: Point::new(0, 0),
         }

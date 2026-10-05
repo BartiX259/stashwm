@@ -40,7 +40,7 @@ impl TextRenderer {
 
         let fallback_empty = MemoryRenderBuffer::from_slice(
             &[0, 0, 0, 0],
-            Fourcc::Argb8888,
+            Fourcc::Abgr8888,
             (1, 1),
             1,
             Transform::Normal,
@@ -118,7 +118,7 @@ impl TextRenderer {
 
             MemoryRenderBuffer::from_slice(
                 &canvas,
-                Fourcc::Argb8888,
+                Fourcc::Abgr8888,
                 (total_width, max_height),
                 1,
                 Transform::Normal,

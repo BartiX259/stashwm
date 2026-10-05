@@ -1,6 +1,7 @@
 use super::{ActionButton, StashArea, WMEngine, WMState, layout::*};
 use crate::backend::render::{CustomRenderElements, OutputRenderElements};
 use crate::backend::shell::{WindowElement, WindowRenderElement};
+use crate::wm::rect::RenderedRect;
 use crate::wm::svg::Icon;
 use smithay::backend::renderer::element::memory::{
     MemoryRenderBuffer, MemoryRenderBufferRenderElement,
@@ -65,40 +66,33 @@ impl WMEngine {
                         let icon_buf = self.svg.render(icon, icon_rect.size, [1.0, 1.0, 1.0, 1.0]);
                         push_memory_buffer(elements, renderer, &icon_buf, icon_rect.loc, scale);
 
-                        let color = match action {
+                        let (fill_col, border_col) = match action {
                             ActionButton::Maximize => {
                                 if is_hov {
-                                    [0.2, 0.7, 0.9, 1.0]
+                                    ([0.18, 0.58, 0.82, 0.95], [0.5, 0.85, 1.0, 0.95])
                                 } else {
-                                    [0.1, 0.4, 0.6, 0.9]
+                                    ([0.1, 0.4, 0.6, 0.85], [1.0, 1.0, 1.0, 0.0])
                                 }
                             }
                             ActionButton::Minimize => {
                                 if is_hov {
-                                    [0.9, 0.7, 0.2, 1.0]
+                                    ([0.85, 0.65, 0.15, 0.95], [1.0, 0.85, 0.4, 0.95])
                                 } else {
-                                    [0.7, 0.5, 0.1, 0.9]
+                                    ([0.65, 0.45, 0.1, 0.85], [1.0, 1.0, 1.0, 0.0])
                                 }
                             }
                             ActionButton::Close => {
                                 if is_hov {
-                                    [1.0, 0.2, 0.2, 1.0]
+                                    ([0.9, 0.18, 0.18, 0.95], [1.0, 0.5, 0.5, 0.95])
                                 } else {
-                                    [0.8, 0.1, 0.1, 0.9]
+                                    ([0.7, 0.1, 0.1, 0.85], [1.0, 1.0, 1.0, 0.0])
                                 }
                             }
                         };
-                        push_solid_rect(elements, rect, scale, color);
+
+                        let btn = self.rect.render(rect.size, 12.0, fill_col, 1.0, border_col);
+                        push_rendered_rect(elements, renderer, &btn, rect.loc, scale);
                     }
-                    // if hovered_window.is_none() {
-                    //     push_outline_rect(
-                    //         elements,
-                    //         win_rect,
-                    //         scale,
-                    //         OUTLINE_WIDTH,
-                    //         [0.2, 0.8, 0.5, 0.9],
-                    //     );
-                    // }
 
                     // Semi-transparent overlay
                     push_solid_rect(elements, win_rect, scale, [0.05, 0.06, 0.08, 0.8]);
@@ -129,13 +123,24 @@ impl WMEngine {
                             self.svg
                                 .render(Icon::Close, icon_rect.size, [1.0, 1.0, 1.0, 1.0]);
                         push_memory_buffer(elements, renderer, &icon_buf, icon_rect.loc, scale);
+
                         let is_close_hov = *mouse_area == StashArea::PreviewClose(win.clone());
-                        let col = if is_close_hov {
-                            [1.0, 0.2, 0.2, 1.0]
-                        } else {
-                            [0.6, 0.2, 0.2, 0.8]
-                        };
-                        push_solid_rect(elements, preview.close_button, scale, col);
+                        if is_close_hov {
+                            let close_bg = self.rect.render(
+                                preview.close_button.size,
+                                4.0,
+                                [0.88, 0.16, 0.16, 0.95],
+                                0.0,
+                                [0.0, 0.0, 0.0, 0.0],
+                            );
+                            push_rendered_rect(
+                                elements,
+                                renderer,
+                                &close_bg,
+                                preview.close_button.loc,
+                                scale,
+                            );
+                        }
                     }
                 }
 
@@ -174,18 +179,23 @@ impl WMEngine {
                 // Preview outlines and backgrounds
                 for (i, win) in self.stashed_windows.iter().enumerate() {
                     if let Some(preview) = layout.previews.get(i) {
-                        if *mouse_area == StashArea::Preview(win.clone())
-                            || *mouse_area == StashArea::PreviewClose(win.clone())
-                        {
-                            push_outline_rect(
-                                elements,
-                                preview.main_rect,
-                                scale,
-                                2,
-                                [0.2, 0.7, 0.9, 1.0],
-                            );
-                        }
-                        push_solid_rect(elements, preview.main_rect, scale, [0.1, 0.12, 0.16, 0.9]);
+                        let is_hov = *mouse_area == StashArea::Preview(win.clone())
+                            || *mouse_area == StashArea::PreviewClose(win.clone());
+
+                        let (fill_col, border_col) = if is_hov {
+                            ([0.12, 0.15, 0.20, 0.95], [0.2, 0.7, 0.95, 0.95])
+                        } else {
+                            ([0.1, 0.12, 0.16, 0.9], [1.0, 1.0, 1.0, 0.12])
+                        };
+
+                        let card = self.rect.render(
+                            preview.main_rect.size,
+                            10.0,
+                            fill_col,
+                            1.0,
+                            border_col,
+                        );
+                        push_rendered_rect(elements, renderer, &card, preview.main_rect.loc, scale);
                     }
                 }
 
@@ -208,28 +218,68 @@ impl WMEngine {
                     scale,
                 );
 
-                let restore_color = if *mouse_area == StashArea::RestoreAll {
-                    [0.2, 0.8, 0.4, 1.0]
+                let is_restore_hov = *mouse_area == StashArea::RestoreAll;
+                let (res_fill, res_border) = if is_restore_hov {
+                    ([0.2, 0.75, 0.42, 0.95], [0.4, 0.95, 0.6, 0.95])
                 } else {
-                    [0.15, 0.5, 0.3, 0.9]
+                    ([0.15, 0.5, 0.3, 0.85], [1.0, 1.0, 1.0, 0.18])
                 };
-                push_solid_rect(elements, layout.restore_all, scale, restore_color);
+                let restore_btn =
+                    self.rect
+                        .render(layout.restore_all.size, 14.0, res_fill, 1.0, res_border);
+                push_rendered_rect(
+                    elements,
+                    renderer,
+                    &restore_btn,
+                    layout.restore_all.loc,
+                    scale,
+                );
 
-                let close_color = if *mouse_area == StashArea::CloseAll {
-                    [1.0, 0.3, 0.3, 1.0]
+                let is_close_all_hov = *mouse_area == StashArea::CloseAll;
+                let (cls_fill, cls_border) = if is_close_all_hov {
+                    ([0.88, 0.22, 0.22, 0.95], [1.0, 0.45, 0.45, 0.95])
                 } else {
-                    [0.7, 0.2, 0.2, 0.9]
+                    ([0.65, 0.18, 0.18, 0.85], [1.0, 1.0, 1.0, 0.18])
                 };
-                push_solid_rect(elements, layout.close_all, scale, close_color);
+                let close_btn =
+                    self.rect
+                        .render(layout.close_all.size, 14.0, cls_fill, 1.0, cls_border);
+                push_rendered_rect(elements, renderer, &close_btn, layout.close_all.loc, scale);
 
                 // Background
-                push_solid_rect(elements, layout.main_rect, scale, [0.06, 0.07, 0.1, 0.95]);
+                let stash_bg = self.rect.render(
+                    layout.main_rect.size,
+                    14.0,
+                    [0.06, 0.07, 0.1, 0.95],
+                    1.0,
+                    [1.0, 1.0, 1.0, 0.1],
+                );
+                push_rendered_rect(elements, renderer, &stash_bg, layout.main_rect.loc, scale);
             }
         }
         for rect in &self.visible_rects {
             push_outline_rect(elements, *rect, scale, OUTLINE_WIDTH, [0.4, 0.4, 0.4, 1.0]);
         }
     }
+}
+
+fn push_rendered_rect<R>(
+    elements: &mut Vec<OutputRenderElements<R, WindowRenderElement<R>>>,
+    renderer: &mut R,
+    rendered: &RenderedRect,
+    inner_loc: Point<i32, Logical>,
+    scale: Scale<f64>,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Clone + Send + 'static,
+{
+    push_memory_buffer(
+        elements,
+        renderer,
+        &rendered.buffer,
+        rendered.location(inner_loc),
+        scale,
+    );
 }
 
 fn push_solid_rect<R>(
