@@ -1,9 +1,22 @@
 use fontdue::{Font, FontSettings};
-use smithay::{
-    backend::{allocator::Fourcc, renderer::element::memory::MemoryRenderBuffer},
-    utils::Transform,
-};
+use smithay::backend::{allocator::Fourcc, renderer::element::memory::MemoryRenderBuffer};
+use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+pub struct RenderedText {
+    pub buffer: MemoryRenderBuffer,
+    pub size: Size<i32, Logical>,
+}
+
+impl RenderedText {
+    pub fn centered_in(&self, container: Rectangle<i32, Logical>) -> Point<i32, Logical> {
+        Point::new(
+            container.loc.x + (container.size.w - self.size.w) / 2,
+            container.loc.y + (container.size.h - self.size.h) / 2,
+        )
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct TextCacheKey {
@@ -14,9 +27,10 @@ struct TextCacheKey {
 
 pub struct TextRenderer {
     font: Option<Font>,
-    fallback_empty: MemoryRenderBuffer,
-    cache: HashMap<TextCacheKey, MemoryRenderBuffer>,
+    fallback_empty: RenderedText,
+    cache: HashMap<TextCacheKey, RenderedText>,
 }
+
 impl std::fmt::Debug for TextRenderer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TextRenderer").finish()
@@ -38,14 +52,17 @@ impl TextRenderer {
             .find_map(|path| std::fs::read(path).ok())
             .and_then(|bytes| Font::from_bytes(bytes, FontSettings::default()).ok());
 
-        let fallback_empty = MemoryRenderBuffer::from_slice(
-            &[0, 0, 0, 0],
-            Fourcc::Abgr8888,
-            (1, 1),
-            1,
-            Transform::Normal,
-            None,
-        );
+        let fallback_empty = RenderedText {
+            buffer: MemoryRenderBuffer::from_slice(
+                &[0, 0, 0, 0],
+                Fourcc::Abgr8888,
+                (1, 1),
+                1,
+                Transform::Normal,
+                None,
+            ),
+            size: Size::new(1, 1),
+        };
 
         Self {
             font,
@@ -54,7 +71,7 @@ impl TextRenderer {
         }
     }
 
-    pub fn render(&mut self, text: &str, size_pt: f32, color: [f32; 4]) -> MemoryRenderBuffer {
+    pub fn render(&mut self, text: &str, size_pt: f32, color: [f32; 4]) -> RenderedText {
         let Some(font) = &self.font else {
             return self.fallback_empty.clone();
         };
@@ -76,15 +93,24 @@ impl TextRenderer {
         };
 
         let cached = self.cache.entry(key).or_insert_with(|| {
-            let mut total_width = 0;
-            let max_height = size_pt.ceil() as i32 + 4;
+            let line_metrics = font.horizontal_line_metrics(size_pt);
+            let (ascent, descent) = if let Some(m) = line_metrics {
+                (m.ascent, m.descent)
+            } else {
+                (size_pt, -size_pt * 0.25)
+            };
 
+            let max_height = (ascent - descent).ceil() as i32;
+            let baseline = ascent.round() as i32;
+
+            let mut total_width = 0;
             for ch in text.chars() {
                 let metrics = font.metrics(ch, size_pt);
                 total_width += metrics.advance_width.ceil() as i32;
             }
 
             let total_width = total_width.max(1);
+            let max_height = max_height.max(1);
             let mut canvas = vec![0u8; (total_width * max_height * 4) as usize];
 
             let mut x_offset = 0;
@@ -98,8 +124,7 @@ impl TextRenderer {
                             continue;
                         }
 
-                        let y =
-                            (max_height - metrics.height as i32 - metrics.ymin) + row as i32 - 2;
+                        let y = baseline - (metrics.ymin + metrics.height as i32) + row as i32;
                         let x = x_offset + metrics.xmin + col as i32;
 
                         if x >= 0 && x < total_width && y >= 0 && y < max_height {
@@ -116,15 +141,21 @@ impl TextRenderer {
                 x_offset += metrics.advance_width.ceil() as i32;
             }
 
-            MemoryRenderBuffer::from_slice(
+            let buffer = MemoryRenderBuffer::from_slice(
                 &canvas,
                 Fourcc::Abgr8888,
                 (total_width, max_height),
                 1,
                 Transform::Normal,
                 None,
-            )
+            );
+
+            RenderedText {
+                buffer,
+                size: Size::new(total_width, max_height),
+            }
         });
+
         cached.clone()
     }
 }

@@ -204,8 +204,8 @@ impl WMEngine {
                 push_memory_buffer(
                     elements,
                     renderer,
-                    &restore_all_text,
-                    Point::new(layout.restore_all.loc.x + 12, layout.restore_all.loc.y + 6),
+                    &restore_all_text.buffer,
+                    restore_all_text.centered_in(layout.restore_all),
                     scale,
                 );
 
@@ -213,8 +213,8 @@ impl WMEngine {
                 push_memory_buffer(
                     elements,
                     renderer,
-                    &close_all_text,
-                    Point::new(layout.close_all.loc.x + 16, layout.close_all.loc.y + 6),
+                    &close_all_text.buffer,
+                    close_all_text.centered_in(layout.close_all),
                     scale,
                 );
 
