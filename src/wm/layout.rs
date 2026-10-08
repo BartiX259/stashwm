@@ -129,6 +129,19 @@ pub struct StashLayout {
     pub close_all: Rectangle<i32, Logical>,
 }
 
+impl StashLayout {
+    pub fn offset_y(&mut self, dy: i32) {
+        self.main_rect.loc.y += dy;
+        for p in &mut self.previews {
+            p.main_rect.loc.y += dy;
+            p.preview_rect.loc.y += dy;
+            p.close_button.loc.y += dy;
+        }
+        self.restore_all.loc.y += dy;
+        self.close_all.loc.y += dy;
+    }
+}
+
 pub fn calculate_stash_layout(screen: Size<i32, Logical>, count: usize) -> StashLayout {
     let padding = 16;
     let gap = 16;

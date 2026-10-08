@@ -1,4 +1,5 @@
 pub mod actions;
+pub mod animation;
 pub mod keyboard;
 pub mod layout;
 pub mod mouse;
@@ -10,6 +11,7 @@ pub mod text;
 
 use crate::protocol::*;
 use crate::wm::actions::WMAction;
+use crate::wm::animation::AnimationManager;
 use crate::wm::rect::RectRenderer;
 use crate::wm::svg::SvgRenderer;
 use crate::wm::text::TextRenderer;
@@ -60,6 +62,7 @@ pub struct WMEngine {
     pub text: TextRenderer,
     pub svg: SvgRenderer,
     pub rect: RectRenderer,
+    pub anim: AnimationManager,
     rebound: Rebound,
     last_pointer_pos: Point<i32, Logical>,
 }
@@ -77,6 +80,7 @@ impl WMEngine {
             text: TextRenderer::new(),
             svg: SvgRenderer::new(),
             rect: RectRenderer::new(),
+            anim: AnimationManager::new(),
             rebound: Rebound::new(),
             last_pointer_pos: Point::new(0, 0),
         }
@@ -169,6 +173,10 @@ impl WMEngine {
         self.normal_state_under_cursor(effects);
     }
     pub fn minimize_window(&mut self, window: WindowElement, effects: &mut Vec<BackendEffect>) {
+        if let Some(from) = self.get_window_geometry(&window) {
+            let to = self.bottom_exit_rect();
+            self.anim.start_exiting(window.clone(), from, to);
+        }
         self.visible_windows.retain(|w| w != &window);
         self.stashed_windows.push(window.clone());
         let stash_layout = calculate_stash_layout(self.screen_size, self.stashed_windows.len());
@@ -184,6 +192,12 @@ impl WMEngine {
         self.normal_state_under_cursor(effects);
     }
     pub fn maximize_window(&mut self, window: WindowElement, effects: &mut Vec<BackendEffect>) {
+        for other in self.visible_windows.iter().filter(|w| **w != window) {
+            if let Some(from) = self.get_window_geometry(&other) {
+                let to = self.bottom_exit_rect();
+                self.anim.start_exiting(other.clone(), from, to);
+            }
+        }
         let others: Vec<_> = self
             .visible_windows
             .drain(..)
@@ -206,7 +220,15 @@ impl WMEngine {
         let i1 = self.visible_windows.iter().position(|w| w == &w1);
         let i2 = self.visible_windows.iter().position(|w| w == &w2);
         if let (Some(i1), Some(i2)) = (i1, i2) {
+            let old_windows = self.visible_windows.clone();
+            let old_rects = self.visible_rects.clone();
             self.visible_windows.swap(i1, i2);
+            self.anim.sync_layout(
+                &old_windows,
+                &old_rects,
+                &self.visible_windows,
+                &self.visible_rects,
+            );
             effects.push(BackendEffect::MapWindow {
                 window: self.visible_windows[i1].clone(),
                 loc: self.visible_rects[i1].loc,
@@ -226,38 +248,52 @@ impl WMEngine {
         }
     }
     pub fn restore_stashed(&mut self, window: WindowElement, effects: &mut Vec<BackendEffect>) {
+        let stash_layout = calculate_stash_layout(self.screen_size, self.stashed_windows.len());
+        if let Some(idx) = self.stashed_windows.iter().position(|w| w == &window) {
+            if let Some(preview) = stash_layout.previews.get(idx) {
+                self.anim.set_origin(window.clone(), preview.preview_rect);
+            }
+        }
         self.stashed_windows.retain(|w| w != &window);
         self.visible_windows.push(window.clone());
         self.recompute_layout(effects);
         effects.push(BackendEffect::SetFocus(Some(window)));
         if self.stashed_windows.is_empty() {
-            self.normal_state_under_cursor(effects);
+            self.toggle_stash(effects);
         }
     }
     pub fn close_stashed(&mut self, window: WindowElement, effects: &mut Vec<BackendEffect>) {
         self.stashed_windows.retain(|w| w != &window);
         effects.push(BackendEffect::CloseWindow(window));
         if self.stashed_windows.is_empty() {
-            self.normal_state_under_cursor(effects);
+            self.toggle_stash(effects);
         }
     }
     pub fn restore_all_stashed(&mut self, effects: &mut Vec<BackendEffect>) {
+        let stash_layout = calculate_stash_layout(self.screen_size, self.stashed_windows.len());
+        for (idx, window) in self.stashed_windows.iter().enumerate() {
+            if let Some(preview) = stash_layout.previews.get(idx) {
+                self.anim.set_origin(window.clone(), preview.preview_rect);
+            }
+        }
         let all = std::mem::take(&mut self.stashed_windows);
         self.visible_windows.extend(all);
         self.recompute_layout(effects);
-        self.normal_state_under_cursor(effects);
+        self.toggle_stash(effects);
     }
     pub fn close_all_stashed(&mut self, effects: &mut Vec<BackendEffect>) {
         let all = std::mem::take(&mut self.stashed_windows);
         for w in all {
             effects.push(BackendEffect::CloseWindow(w));
         }
-        self.normal_state_under_cursor(effects);
+        self.toggle_stash(effects);
     }
     pub fn toggle_stash(&mut self, effects: &mut Vec<BackendEffect>) {
         if let WMState::StashOpened { .. } = self.state {
+            self.anim.close_stash();
             self.normal_state_under_cursor(effects);
         } else {
+            self.anim.open_stash();
             self.state = WMState::StashOpened {
                 mouse_area: StashArea::Outside,
             };
@@ -286,6 +322,9 @@ impl WMEngine {
     pub fn normal_state_under_cursor(&mut self, effects: &mut Vec<BackendEffect>) {
         let under = self.window_at(self.last_pointer_pos);
         self.rebound.reset();
+        if let WMState::StashOpened { .. } = self.state {
+            self.anim.close_stash();
+        }
         self.state = WMState::Normal {
             active_window: under.clone(),
         };
@@ -313,7 +352,15 @@ impl WMEngine {
     }
 
     fn recompute_layout(&mut self, effects: &mut Vec<BackendEffect>) {
+        let old_windows = self.visible_windows.clone();
+        let old_rects = self.visible_rects.clone();
         self.visible_rects = master_slave_layout(self.screen_size, self.visible_windows.len());
+        self.anim.sync_layout(
+            &old_windows,
+            &old_rects,
+            &self.visible_windows,
+            &self.visible_rects,
+        );
         for (win, rect) in self.visible_windows.iter().zip(self.visible_rects.iter()) {
             effects.push(BackendEffect::MapWindow {
                 window: win.clone(),
@@ -344,5 +391,12 @@ impl WMEngine {
     fn get_window_geometry(&self, window: &WindowElement) -> Option<Rectangle<i32, Logical>> {
         let idx = self.visible_windows.iter().position(|w| w == window)?;
         self.visible_rects.get(idx).copied()
+    }
+
+    fn bottom_exit_rect(&self) -> Rectangle<i32, Logical> {
+        Rectangle::new(
+            Point::new(self.screen_size.w / 2, self.screen_size.h),
+            Size::new(1, 1),
+        )
     }
 }

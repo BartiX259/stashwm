@@ -36,14 +36,12 @@ impl WMEngine {
         match &self.state {
             WMState::Normal { active_window } => {
                 if let Some(window) = active_window {
-                    if let Some(win_rect) = self.get_window_geometry(window) {
-                        push_outline_rect(
-                            elements,
-                            win_rect,
-                            scale,
-                            OUTLINE_WIDTH,
-                            [0.1, 0.9, 0.9, 1.0],
-                        );
+                    let rect = self
+                        .anim
+                        .get_animating_rect(window)
+                        .or(self.get_window_geometry(window));
+                    if let Some(r) = rect {
+                        push_outline_rect(elements, r, scale, OUTLINE_WIDTH, [0.1, 0.9, 0.9, 1.0]);
                     }
                 }
             }
@@ -111,154 +109,205 @@ impl WMEngine {
                     }
                 }
             }
-            WMState::StashOpened { mouse_area } => {
-                let layout = calculate_stash_layout(self.screen_size, self.stashed_windows.len());
+            WMState::StashOpened { .. } => {}
+        }
+        // Stash
+        let mut layout = calculate_stash_layout(self.screen_size, self.stashed_windows.len());
+        let stash_progress = self.anim.stash_progress();
+        if stash_progress > 0.0 {
+            let offscreen_dy =
+                ((1.0 - stash_progress) * (layout.main_rect.size.h as f32 + 100.0)).round() as i32;
+            layout.offset_y(offscreen_dy);
+            let mouse_area = match &self.state {
+                WMState::StashOpened { mouse_area } => mouse_area,
+                _ => &StashArea::Outside,
+            };
+            // Close buttons
+            for (i, win) in self.stashed_windows.iter().enumerate() {
+                if let Some(preview) = layout.previews.get(i) {
+                    let icon_rect =
+                        padded(preview.close_button, icon_padding(preview.close_button));
+                    let icon_buf =
+                        self.svg
+                            .render(Icon::Close, icon_rect.size, [1.0, 1.0, 1.0, 1.0]);
+                    push_memory_buffer(elements, renderer, &icon_buf, icon_rect.loc, scale);
 
-                // Close buttons
-                for (i, win) in self.stashed_windows.iter().enumerate() {
-                    if let Some(preview) = layout.previews.get(i) {
-                        let icon_rect =
-                            padded(preview.close_button, icon_padding(preview.close_button));
-                        let icon_buf =
-                            self.svg
-                                .render(Icon::Close, icon_rect.size, [1.0, 1.0, 1.0, 1.0]);
-                        push_memory_buffer(elements, renderer, &icon_buf, icon_rect.loc, scale);
-
-                        let is_close_hov = *mouse_area == StashArea::PreviewClose(win.clone());
-                        if is_close_hov {
-                            let close_bg = self.rect.render(
-                                preview.close_button.size,
-                                4.0,
-                                [0.88, 0.16, 0.16, 0.95],
-                                0.0,
-                                [0.0, 0.0, 0.0, 0.0],
-                            );
-                            push_rendered_rect(
-                                elements,
-                                renderer,
-                                &close_bg,
-                                preview.close_button.loc,
-                                scale,
-                            );
-                        }
-                    }
-                }
-
-                // Titles above previewAs
-                for (i, win) in self.stashed_windows.iter().enumerate() {
-                    if let Some(preview) = layout.previews.get(i) {
-                        let title = get_window_title(win);
-                        let title_pos =
-                            Point::new(preview.main_rect.loc.x + 10, preview.main_rect.loc.y + 6);
-                        let text_buffer = self.text.render(&title, 12.0, [0.9, 0.9, 0.95, 1.0]);
-                        push_memory_buffer(elements, renderer, &text_buffer, title_pos, scale);
-                    }
-                }
-
-                // Window previews
-                let constrain_behavior = ConstrainBehavior {
-                    reference: ConstrainReference::Geometry,
-                    behavior: ConstrainScaleBehavior::Fit,
-                    align: ConstrainAlign::CENTER,
-                };
-                for (i, win) in self.stashed_windows.iter().enumerate() {
-                    if let Some(preview) = layout.previews.get(i) {
-                        let preview_elements = constrain_space_element(
+                    let is_close_hov = *mouse_area == StashArea::PreviewClose(win.clone());
+                    if is_close_hov {
+                        let close_bg = self.rect.render(
+                            preview.close_button.size,
+                            4.0,
+                            [0.88, 0.16, 0.16, 0.95],
+                            0.0,
+                            [0.0, 0.0, 0.0, 0.0],
+                        );
+                        push_rendered_rect(
+                            elements,
                             renderer,
-                            win,
-                            preview.preview_rect.loc,
-                            1.0,
-                            scale.x,
-                            preview.preview_rect,
-                            constrain_behavior,
+                            &close_bg,
+                            preview.close_button.loc,
+                            scale,
                         );
-                        elements.extend(preview_elements.map(OutputRenderElements::Preview));
                     }
                 }
+            }
 
-                // Preview outlines and backgrounds
-                for (i, win) in self.stashed_windows.iter().enumerate() {
-                    if let Some(preview) = layout.previews.get(i) {
-                        let is_hov = *mouse_area == StashArea::Preview(win.clone())
-                            || *mouse_area == StashArea::PreviewClose(win.clone());
-
-                        let (fill_col, border_col) = if is_hov {
-                            ([0.12, 0.15, 0.20, 0.95], [0.2, 0.7, 0.95, 0.95])
-                        } else {
-                            ([0.1, 0.12, 0.16, 0.9], [1.0, 1.0, 1.0, 0.12])
-                        };
-
-                        let card = self.rect.render(
-                            preview.main_rect.size,
-                            10.0,
-                            fill_col,
-                            1.0,
-                            border_col,
-                        );
-                        push_rendered_rect(elements, renderer, &card, preview.main_rect.loc, scale);
-                    }
+            // Titles above previewAs
+            for (i, win) in self.stashed_windows.iter().enumerate() {
+                if let Some(preview) = layout.previews.get(i) {
+                    let title = get_window_title(win);
+                    let title_pos =
+                        Point::new(preview.main_rect.loc.x + 10, preview.main_rect.loc.y + 6);
+                    let text = self.text.render(&title, 12.0, [0.9, 0.9, 0.95, 1.0]);
+                    push_memory_buffer(elements, renderer, &text.buffer, title_pos, scale);
                 }
+            }
 
-                // Restore/close all
-                let restore_all_text = self.text.render("Restore All", 12.0, [1.0, 1.0, 1.0, 1.0]);
-                push_memory_buffer(
-                    elements,
+            // Window previews
+            let constrain_behavior = ConstrainBehavior {
+                reference: ConstrainReference::Geometry,
+                behavior: ConstrainScaleBehavior::Fit,
+                align: ConstrainAlign::CENTER,
+            };
+            for (i, win) in self.stashed_windows.iter().enumerate() {
+                if let Some(preview) = layout.previews.get(i) {
+                    let preview_elements = constrain_space_element(
+                        renderer,
+                        win,
+                        preview.preview_rect.loc,
+                        1.0,
+                        scale.x,
+                        preview.preview_rect,
+                        constrain_behavior,
+                    );
+                    elements.extend(preview_elements.map(OutputRenderElements::Preview));
+                }
+            }
+
+            // Preview outlines and backgrounds
+            for (i, win) in self.stashed_windows.iter().enumerate() {
+                if let Some(preview) = layout.previews.get(i) {
+                    let is_hov = *mouse_area == StashArea::Preview(win.clone())
+                        || *mouse_area == StashArea::PreviewClose(win.clone());
+
+                    let (fill_col, border_col) = if is_hov {
+                        ([0.12, 0.15, 0.20, 0.95], [0.2, 0.7, 0.95, 0.95])
+                    } else {
+                        ([0.1, 0.12, 0.16, 0.9], [1.0, 1.0, 1.0, 0.12])
+                    };
+
+                    let card =
+                        self.rect
+                            .render(preview.main_rect.size, 10.0, fill_col, 1.0, border_col);
+                    push_rendered_rect(elements, renderer, &card, preview.main_rect.loc, scale);
+                }
+            }
+
+            // Restore/close all
+            let restore_all_text = self.text.render("Restore All", 12.0, [1.0, 1.0, 1.0, 1.0]);
+            push_memory_buffer(
+                elements,
+                renderer,
+                &restore_all_text.buffer,
+                restore_all_text.centered_in(layout.restore_all),
+                scale,
+            );
+
+            let close_all_text = self.text.render("Close All", 12.0, [1.0, 1.0, 1.0, 1.0]);
+            push_memory_buffer(
+                elements,
+                renderer,
+                &close_all_text.buffer,
+                close_all_text.centered_in(layout.close_all),
+                scale,
+            );
+
+            let is_restore_hov = *mouse_area == StashArea::RestoreAll;
+            let (res_fill, res_border) = if is_restore_hov {
+                ([0.2, 0.75, 0.42, 0.95], [0.4, 0.95, 0.6, 0.95])
+            } else {
+                ([0.15, 0.5, 0.3, 0.85], [1.0, 1.0, 1.0, 0.18])
+            };
+            let restore_btn =
+                self.rect
+                    .render(layout.restore_all.size, 14.0, res_fill, 1.0, res_border);
+            push_rendered_rect(
+                elements,
+                renderer,
+                &restore_btn,
+                layout.restore_all.loc,
+                scale,
+            );
+
+            let is_close_all_hov = *mouse_area == StashArea::CloseAll;
+            let (cls_fill, cls_border) = if is_close_all_hov {
+                ([0.88, 0.22, 0.22, 0.95], [1.0, 0.45, 0.45, 0.95])
+            } else {
+                ([0.65, 0.18, 0.18, 0.85], [1.0, 1.0, 1.0, 0.18])
+            };
+            let close_btn =
+                self.rect
+                    .render(layout.close_all.size, 14.0, cls_fill, 1.0, cls_border);
+            push_rendered_rect(elements, renderer, &close_btn, layout.close_all.loc, scale);
+
+            // Background
+            let stash_bg = self.rect.render(
+                layout.main_rect.size,
+                14.0,
+                [0.06, 0.07, 0.1, 0.95],
+                1.0,
+                [1.0, 1.0, 1.0, 0.1],
+            );
+            push_rendered_rect(elements, renderer, &stash_bg, layout.main_rect.loc, scale);
+        }
+
+        // for rect in &self.visible_rects {
+        //     push_outline_rect(elements, *rect, scale, OUTLINE_WIDTH, [0.4, 0.4, 0.4, 1.0]);
+        // }
+
+        // Outlines and animations
+        let constrain_behavior = ConstrainBehavior {
+            reference: ConstrainReference::Geometry,
+            behavior: ConstrainScaleBehavior::Stretch,
+            align: ConstrainAlign::CENTER,
+        };
+        for window in self.visible_windows.iter() {
+            let animating_rect = self.anim.get_animating_rect(window);
+            if let Some(rect) = animating_rect {
+                let preview_elements = constrain_space_element(
                     renderer,
-                    &restore_all_text.buffer,
-                    restore_all_text.centered_in(layout.restore_all),
-                    scale,
-                );
-
-                let close_all_text = self.text.render("Close All", 12.0, [1.0, 1.0, 1.0, 1.0]);
-                push_memory_buffer(
-                    elements,
-                    renderer,
-                    &close_all_text.buffer,
-                    close_all_text.centered_in(layout.close_all),
-                    scale,
-                );
-
-                let is_restore_hov = *mouse_area == StashArea::RestoreAll;
-                let (res_fill, res_border) = if is_restore_hov {
-                    ([0.2, 0.75, 0.42, 0.95], [0.4, 0.95, 0.6, 0.95])
-                } else {
-                    ([0.15, 0.5, 0.3, 0.85], [1.0, 1.0, 1.0, 0.18])
-                };
-                let restore_btn =
-                    self.rect
-                        .render(layout.restore_all.size, 14.0, res_fill, 1.0, res_border);
-                push_rendered_rect(
-                    elements,
-                    renderer,
-                    &restore_btn,
-                    layout.restore_all.loc,
-                    scale,
-                );
-
-                let is_close_all_hov = *mouse_area == StashArea::CloseAll;
-                let (cls_fill, cls_border) = if is_close_all_hov {
-                    ([0.88, 0.22, 0.22, 0.95], [1.0, 0.45, 0.45, 0.95])
-                } else {
-                    ([0.65, 0.18, 0.18, 0.85], [1.0, 1.0, 1.0, 0.18])
-                };
-                let close_btn =
-                    self.rect
-                        .render(layout.close_all.size, 14.0, cls_fill, 1.0, cls_border);
-                push_rendered_rect(elements, renderer, &close_btn, layout.close_all.loc, scale);
-
-                // Background
-                let stash_bg = self.rect.render(
-                    layout.main_rect.size,
-                    14.0,
-                    [0.06, 0.07, 0.1, 0.95],
+                    window,
+                    rect.loc,
                     1.0,
-                    [1.0, 1.0, 1.0, 0.1],
+                    scale.x,
+                    rect,
+                    constrain_behavior,
                 );
-                push_rendered_rect(elements, renderer, &stash_bg, layout.main_rect.loc, scale);
+                elements.extend(preview_elements.map(OutputRenderElements::Preview));
+            }
+            if let Some(rect) = animating_rect.or(self.get_window_geometry(window)) {
+                let border_color = [0.4, 0.4, 0.4, 1.0];
+                push_outline_rect(elements, rect, scale, OUTLINE_WIDTH, border_color);
             }
         }
-        for rect in &self.visible_rects {
-            push_outline_rect(elements, *rect, scale, OUTLINE_WIDTH, [0.4, 0.4, 0.4, 1.0]);
+        for (win, render_rect) in self.anim.get_exiting_rects() {
+            let preview_elements = constrain_space_element(
+                renderer,
+                &win,
+                render_rect.loc,
+                1.0,
+                scale.x,
+                render_rect,
+                constrain_behavior,
+            );
+            elements.extend(preview_elements.map(OutputRenderElements::Preview));
+            push_outline_rect(
+                elements,
+                render_rect,
+                scale,
+                OUTLINE_WIDTH,
+                [0.4, 0.4, 0.4, 0.8],
+            );
         }
     }
 }

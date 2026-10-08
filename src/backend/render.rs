@@ -184,14 +184,41 @@ where
 
         wm.render_overlays(renderer, output, &mut output_render_elements);
 
-        let space_elements = smithay::desktop::space::space_render_elements::<_, WindowElement, _>(
-            renderer,
-            [space],
-            output,
-            1.0,
-        )
-        .expect("output without mode?");
-        output_render_elements.extend(space_elements.into_iter().map(OutputRenderElements::Space));
+        // let space_elements = smithay::desktop::space::space_render_elements::<_, WindowElement, _>(
+        //     renderer,
+        //     [space],
+        //     output,
+        //     1.0,
+        // )
+        // .expect("output without mode?");
+
+        // Only draw windows if they're not animating
+        let scale = output.current_scale().fractional_scale().into();
+        let output_geo = space.output_geometry(output).unwrap();
+        for window in space.elements() {
+            if wm.anim.is_animating(window) {
+                continue;
+            }
+            if let Some(bbox) = space.element_bbox(window) {
+                if bbox.overlaps(output_geo) {
+                    let window_loc = space.element_location(window).unwrap() - output_geo.loc;
+                    let window_elements: Vec<WindowRenderElement<R>> =
+                        AsRenderElements::<R>::render_elements(
+                            window,
+                            renderer,
+                            window_loc.to_physical_precise_round(scale),
+                            scale,
+                            1.0,
+                        );
+
+                    output_render_elements.extend(window_elements.into_iter().map(|e| {
+                        OutputRenderElements::Space(
+                            smithay::desktop::space::SpaceRenderElements::Element(Wrap::from(e)),
+                        )
+                    }));
+                }
+            }
+        }
 
         (output_render_elements, CLEAR_COLOR)
     }
